@@ -1,12 +1,12 @@
 [project]
-name = "your-favourite-package-name"
-description = "Description of your package"
+name = "kuckuck"
+description = "Lokale Pseudonymisierung personenbezogener Daten in Textdateien vor der Verarbeitung durch Cloud-LLMs"
 license = { text = "MIT" }
 requires-python = ">=3.11"
-authors = [{ name = "your name", email = "your@email.address" }]
-keywords = ["your", "important", "keywords"]
+authors = [{ name = "Hochfrequenz Unternehmensberatung GmbH", email = "info+github@hochfrequenz.de" }]
+keywords = ["pseudonymization", "pii", "gdpr", "dsgvo", "llm", "privacy"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -17,13 +17,27 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Topic :: Security",
+    "Topic :: Text Processing",
 ]
-dependencies = []     # add all the dependencies here
+dependencies = [
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "python-dotenv>=1",
+    "cryptography>=42",
+    "phonenumbers>=8",
+    "pyahocorasick>=2",
+]
 dynamic = ["readme", "version"]
 
 [project.optional-dependencies]
+cli = [
+    "typer>=0.12"
+]
 tests = [
-    "pytest==9.0.3"
+    "pytest==9.0.3",
+    "syrupy==5.1.0",
+    "hypothesis>=6.100"
 ]
 linting = [
     "pylint==4.0.5"
@@ -45,14 +59,20 @@ packaging = [
     "build==1.4.3",
     "twine==6.2.0"
 ]
+build_executable = [
+    "pyinstaller>=6"
+]
 dev = [
     "pip-tools"
 ]
 
 
 [project.urls]
-Changelog = "https://github.com/Hochfrequenz/python_template_repository/releases"
-Homepage = "https://github.com/Hochfrequenz/python_template_repository"
+Changelog = "https://github.com/Hochfrequenz/kuckuck/releases"
+Homepage = "https://github.com/Hochfrequenz/kuckuck"
+
+[project.scripts]
+kuckuck = "kuckuck.__main__:main"
 
 [tool.black]
 line-length = 120
@@ -64,6 +84,9 @@ profile = "black"
 
 [tool.pylint."MESSAGES CONTROL"]
 max-line-length = 120
+
+[tool.pytest.ini_options]
+markers = ["snapshot: mark a test as a snapshot test"]
 
 [mypy]
 truethy-bool = true
@@ -83,7 +106,7 @@ fragments = [{ path = "README.md" }]
 source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "src/_your_package_version.py"
+version-file = "src/_kuckuck_version.py"
 template = '''
 version = "{version}"
 '''
