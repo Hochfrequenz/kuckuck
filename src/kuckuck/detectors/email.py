@@ -34,6 +34,7 @@ class EmailDetector:
     priority = 100
 
     def detect(self, text: str) -> list[Span]:
+        """Return every email address found in *text*."""
         return [
             Span(
                 start=m.start(),

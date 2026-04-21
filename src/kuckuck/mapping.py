@@ -46,6 +46,7 @@ class MappingEntry(BaseModel):
     entity_type: str
 
     def model_dump_json_safe(self) -> dict[str, str]:
+        """Return a JSON-serialisable plain ``dict`` of this entry's fields."""
         return {"original": self.original, "entity_type": self.entity_type}
 
 
@@ -104,6 +105,7 @@ class Mapping(BaseModel):
         return len(self.entries)
 
     def tokens_by_type(self, entity_type: str) -> list[str]:
+        """Return every token whose stored entry carries *entity_type*."""
         return [token for token, entry in self.entries.items() if entry.entity_type == entity_type]
 
 

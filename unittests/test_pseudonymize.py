@@ -6,7 +6,6 @@ import pytest
 from hypothesis import given, settings, strategies as st
 from pydantic import SecretStr
 
-from kuckuck.detectors.base import EntityType
 from kuckuck.mapping import Mapping
 from kuckuck.pseudonymize import (
     build_default_detectors,

@@ -60,8 +60,14 @@ def _read_denylist(path: Path | None) -> list[str]:
 
 @app.command("init-key")
 def cmd_init_key(
-    project: bool = typer.Option(False, "--project", help=f"Write to {PROJECT_KEY_NAME} in the current directory instead of {DEFAULT_KEY_PATH}."),
-    key_file: Path | None = typer.Option(None, "--key-file", "-k", help="Explicit path for the new key file."),
+    project: bool = typer.Option(
+        False,
+        "--project",
+        help=f"Write to {PROJECT_KEY_NAME} in CWD instead of {DEFAULT_KEY_PATH}.",
+    ),
+    key_file: Path | None = typer.Option(
+        None, "--key-file", "-k", help="Explicit path for the new key file."
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing key file."),
 ) -> None:
     """Generate a new master secret."""
@@ -80,14 +86,33 @@ def cmd_init_key(
 
 
 @app.command("run")
-def cmd_run(
-    paths: list[Path] = typer.Argument(..., exists=True, help="Files to pseudonymize in place."),
-    key_file: Path | None = typer.Option(None, "--key-file", "-k", help="Override key lookup."),
-    output_dir: Path | None = typer.Option(None, "--output-dir", "-o", help="Write results to this directory instead of overwriting in place."),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show changes without writing anything."),
-    sequential_tokens: bool = typer.Option(False, "--sequential-tokens", help="Use [[PERSON_1]]-style counters instead of HMAC fingerprints (per-document IDs, not cross-document stable)."),
-    denylist: Path | None = typer.Option(None, "--denylist", help="Path to a denylist file (one entry per line)."),
-    phone_region: str = typer.Option("DE", "--phone-region", help="Default ISO country code for parsing phone numbers."),
+def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+    paths: list[Path] = typer.Argument(
+        ..., exists=True, help="Files to pseudonymize in place."
+    ),
+    key_file: Path | None = typer.Option(
+        None, "--key-file", "-k", help="Override key lookup."
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        "-o",
+        help="Write results to this directory instead of overwriting in place.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Show changes without writing anything."
+    ),
+    sequential_tokens: bool = typer.Option(
+        False,
+        "--sequential-tokens",
+        help="Use [[PERSON_1]]-style counters per document (not cross-document stable).",
+    ),
+    denylist: Path | None = typer.Option(
+        None, "--denylist", help="Path to a denylist file (one entry per line)."
+    ),
+    phone_region: str = typer.Option(
+        "DE", "--phone-region", help="Default ISO country code for parsing phone numbers."
+    ),
 ) -> None:
     """Pseudonymize one or more text files.
 
@@ -182,11 +207,22 @@ def cmd_list_detectors() -> None:
 @app.command("version")
 def cmd_version() -> None:
     """Print the installed Kuckuck version."""
+    typer.echo(_installed_version())
+
+
+def _installed_version() -> str:
+    """Return the version string from the generated ``_kuckuck_version`` module.
+
+    The module is produced by ``hatch-vcs`` at build time. In an in-tree dev
+    checkout it may be missing — in that case we return a stable sentinel so
+    ``kuckuck version`` still produces an answer instead of raising.
+    """
     try:
-        from _kuckuck_version import version  # type: ignore[import-not-found]
+        from _kuckuck_version import version  # pylint: disable=import-outside-toplevel
+
+        return str(version)
     except ImportError:
-        version = "0+unknown"
-    typer.echo(version)
+        return "0+unknown"
 
 
 def inject_default_run(argv: list[str]) -> list[str]:

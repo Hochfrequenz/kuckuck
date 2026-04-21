@@ -84,6 +84,12 @@ profile = "black"
 
 [tool.pylint."MESSAGES CONTROL"]
 max-line-length = 120
+disable = [
+    "too-few-public-methods",   # detectors implement a single-method Protocol
+    "no-member",                # pydantic v2 Field defaults are opaque to pylint
+    "duplicate-code",           # three detectors build Span objects identically by design
+    "c-extension-no-member",    # pyahocorasick is a C extension
+]
 
 [tool.pytest.ini_options]
 markers = ["snapshot: mark a test as a snapshot test"]

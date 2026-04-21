@@ -13,7 +13,7 @@ from kuckuck.detectors.email import EmailDetector
 from kuckuck.detectors.handle import HandleDetector
 from kuckuck.detectors.phone import PhoneDetector
 from kuckuck.detectors.resolver import resolve_spans
-from kuckuck.mapping import Mapping
+from kuckuck.mapping import Mapping, MappingEntry
 
 #: The wire format for a single pseudonym occurrence in the output text.
 TOKEN_TEMPLATE = "[[{entity}_{token}]]"
@@ -80,20 +80,17 @@ def _allocate_token(
 ) -> str:
     """Return the token suffix for *span*; updates *mapping* and counters."""
     if sequential_counters is None:
-        return mapping.get_or_allocate(master, original=span.text, entity_type=span.entity_type.value)
-    # Sequential mode: assign per-doc IDs and still record the original in mapping.
+        return mapping.get_or_allocate(
+            master, original=span.text, entity_type=span.entity_type.value
+        )
     counter = sequential_counters.get(span.entity_type, 0) + 1
     sequential_counters[span.entity_type] = counter
     token = str(counter)
-    # Ensure mapping has an entry keyed by the sequential token. Use direct
-    # dict write — get_or_allocate() would overwrite with an HMAC fingerprint.
-    from kuckuck.mapping import MappingEntry  # local import avoids cycle
-
     mapping.entries[token] = MappingEntry(original=span.text, entity_type=span.entity_type.value)
     return token
 
 
-def pseudonymize_text(
+def pseudonymize_text(  # pylint: disable=too-many-locals
     text: str,
     master: SecretStr,
     detectors: list[Detector] | None = None,

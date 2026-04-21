@@ -99,6 +99,7 @@ class HandleDetector:
     priority = 80
 
     def detect(self, text: str) -> list[Span]:
+        """Return every Jira/Confluence user handle found in *text*."""
         spans: list[Span] = []
         for match in _MENTION_RE.finditer(text):
             if _is_blocked_mention(match.group(1), text, match.end()):

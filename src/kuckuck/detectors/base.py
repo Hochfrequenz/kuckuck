@@ -35,9 +35,11 @@ class Span:
 
     @property
     def length(self) -> int:
+        """Character length of the span (``end - start``)."""
         return self.end - self.start
 
     def overlaps(self, other: "Span") -> bool:
+        """Return ``True`` when *other* shares at least one character position."""
         return self.start < other.end and other.start < self.end
 
 
@@ -50,4 +52,3 @@ class Detector(Protocol):
 
     def detect(self, text: str) -> list[Span]:  # pragma: no cover - protocol
         """Return all matches found in *text*, in any order."""
-        ...

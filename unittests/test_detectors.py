@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from kuckuck.detectors import (
     DenylistDetector,
     EmailDetector,
@@ -145,6 +143,7 @@ class TestDenylistDetector:
 
 
 class TestResolveSpans:
+    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
     def _span(
         self,
         start: int,
@@ -165,7 +164,7 @@ class TestResolveSpans:
         )
 
     def test_empty_input(self) -> None:
-        assert resolve_spans([]) == []
+        assert not resolve_spans([])
 
     def test_non_overlapping_spans_kept(self) -> None:
         a = self._span(0, 5)

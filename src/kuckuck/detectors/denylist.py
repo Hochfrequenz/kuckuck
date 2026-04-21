@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-import ahocorasick  # type: ignore[import-untyped]
+import ahocorasick  # type: ignore[import-not-found]
 
 from kuckuck.detectors.base import EntityType, Span
 
@@ -49,9 +49,11 @@ class DenylistDetector:
 
     @property
     def entries(self) -> tuple[str, ...]:
+        """De-duplicated, longest-first ordered entries this detector matches."""
         return self._entries
 
     def detect(self, text: str) -> list[Span]:
+        """Return every denylist match found in *text*."""
         if not self._entries:
             return []
         spans: list[Span] = []

@@ -23,6 +23,7 @@ class PhoneDetector:
         self.default_region = default_region
 
     def detect(self, text: str) -> list[Span]:
+        """Return every phone number found in *text* using the configured region."""
         matches = phonenumbers.PhoneNumberMatcher(text, self.default_region)
         spans: list[Span] = []
         for match in matches:
