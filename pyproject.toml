@@ -27,6 +27,7 @@ dependencies = [
     "cryptography>=44",
     "phonenumbers>=8.13",
     "pyahocorasick>=2.1",
+    "email-validator>=2.2",
 ]
 dynamic = ["readme", "version"]
 
@@ -40,7 +41,8 @@ tests = [
     "hypothesis==6.152.1"
 ]
 linting = [
-    "pylint==4.0.5"
+    "pylint==4.0.5",
+    "pylint-pydantic==0.4.1"
 ]
 type_check = [
     "mypy==1.20.2"
@@ -82,20 +84,20 @@ target_version = ["py311", "py312", "py313", "py314"]
 line_length = 120
 profile = "black"
 
+[tool.pylint.MASTER]
+load-plugins = "pylint_pydantic"
+
 [tool.pylint."MESSAGES CONTROL"]
 max-line-length = 120
 disable = [
     "too-few-public-methods",   # detectors implement a single-method Protocol
-    "no-member",                # pydantic v2 Field defaults are opaque to pylint
     "duplicate-code",           # three detectors build Span objects identically by design
     "c-extension-no-member",    # pyahocorasick is a C extension
+    "no-member",                # pylint-pydantic handles most FieldInfo cases; a few slip through
 ]
 
 [tool.pytest.ini_options]
 markers = ["snapshot: mark a test as a snapshot test"]
-
-[mypy]
-truethy-bool = true
 
 [tool.mypy]
 disable_error_code = []

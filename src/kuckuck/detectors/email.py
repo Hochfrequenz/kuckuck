@@ -1,33 +1,29 @@
-"""Email address detector — pragmatic RFC-5322-flavoured regex.
+"""Email address detector — candidate regex plus :mod:`email_validator` vetting.
 
-Not a full parser. Aims for high recall against the kind of addresses that
-actually appear in emails, tickets, and wiki exports. Users with exotic
-addresses can lower the priority and supply their own detector via the
-plugin mechanism.
+We cannot use ``email_validator`` alone because it validates *single* addresses,
+not free-form text. The regex sweeps for ``local@domain.tld``-shaped candidates;
+each candidate is then passed through :func:`email_validator.validate_email` so
+only RFC-conforming addresses survive. This gives us the recall of a regex
+together with the precision of a maintained validation library.
 """
 
 from __future__ import annotations
 
 import re
 
+from email_validator import EmailNotValidError, validate_email
+
 from kuckuck.detectors.base import EntityType, Span
 
-#: Matches typical email local-part@domain.tld with optional +tags and dots.
-_EMAIL_RE = re.compile(
-    r"""
-    (?<![\w.+-])                   # no alnum/dot before — avoids matching URL fragments
-    [A-Za-z0-9][A-Za-z0-9._%+\-]*  # local-part: start with alnum
-    @
-    [A-Za-z0-9]                    # domain: start with alnum
-    (?:[A-Za-z0-9\-]*[A-Za-z0-9])?
-    (?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)+
-    """,
-    re.VERBOSE,
+#: Greedy candidate pattern — anything that looks roughly ``local@domain.tld``.
+#: Validation is delegated to :func:`email_validator.validate_email`.
+_EMAIL_CANDIDATE_RE = re.compile(
+    r"(?<![\w.+-])[A-Za-z0-9][A-Za-z0-9._%+\-]*@[A-Za-z0-9][A-Za-z0-9.\-]*\.[A-Za-z]{2,}"
 )
 
 
 class EmailDetector:
-    """Regex-based email detector. Priority 100 — highest among built-ins."""
+    """Regex-based email detector with :mod:`email_validator`-backed vetting."""
 
     name = "email"
     entity_type = EntityType.EMAIL
@@ -35,14 +31,21 @@ class EmailDetector:
 
     def detect(self, text: str) -> list[Span]:
         """Return every email address found in *text*."""
-        return [
-            Span(
-                start=m.start(),
-                end=m.end(),
-                text=m.group(0),
-                entity_type=self.entity_type,
-                detector_name=self.name,
-                priority=self.priority,
+        spans: list[Span] = []
+        for match in _EMAIL_CANDIDATE_RE.finditer(text):
+            candidate = match.group(0)
+            try:
+                validate_email(candidate, check_deliverability=False)
+            except EmailNotValidError:
+                continue
+            spans.append(
+                Span(
+                    start=match.start(),
+                    end=match.end(),
+                    text=candidate,
+                    entity_type=self.entity_type,
+                    detector_name=self.name,
+                    priority=self.priority,
+                )
             )
-            for m in _EMAIL_RE.finditer(text)
-        ]
+        return spans

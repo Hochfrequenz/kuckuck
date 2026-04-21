@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import re
-from dataclasses import dataclass, field
 
-from pydantic import SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from kuckuck.detectors.base import Detector, EntityType, Span
 from kuckuck.detectors.denylist import DenylistDetector
@@ -36,8 +36,10 @@ def build_default_detectors(*, denylist: list[str] | None = None, phone_region: 
     return detectors
 
 
-@dataclass
-class PseudonymizeResult:
+logger = logging.getLogger(__name__)
+
+
+class PseudonymizeResult(BaseModel):
     """Return value of :func:`pseudonymize_text`.
 
     :attr:`text` is the pseudonymized text, :attr:`mapping` is the updated
@@ -45,9 +47,11 @@ class PseudonymizeResult:
     that was replaced (for use in review logs).
     """
 
-    text: str
-    mapping: Mapping
-    replaced: list[Span] = field(default_factory=list)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    text: str = Field(description="The pseudonymized text.")
+    mapping: Mapping = Field(description="The mapping updated with every new allocation.")
+    replaced: list[Span] = Field(default_factory=list, description="Spans replaced by tokens, in document order.")
 
 
 def _find_own_tokens(text: str) -> list[Span]:

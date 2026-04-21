@@ -9,7 +9,7 @@ disable =
     R0801,  # duplicate-code (tests prefer explicit over DRY)
     C1803,  # use-implicit-booleaness-not-comparison (== [] is clearer in tests)
     W0201,  # attribute-defined-outside-init (setup_method sets attrs)
-    E1101,  # no-member (pydantic v2 FieldInfo false positives)
     C0415,  # import-outside-toplevel (scoped imports are sometimes intentional)
+load-plugins = pylint_pydantic
 [pylint."MESSAGES CONTROL"]
 max-line-length = 120
