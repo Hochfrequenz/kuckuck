@@ -327,11 +327,7 @@ class TestXmlPreprocessor:
         # the URI itself before our hardening can kick in.
         secret = tmp_path / "secret.txt"
         secret.write_text("LEAKED-SECRET-PAYLOAD", encoding="utf-8")
-        hostile = (
-            "<?xml version='1.0'?>"
-            f'<!DOCTYPE r [<!ENTITY xxe SYSTEM "{secret.as_uri()}">]>'
-            "<r>&xxe;</r>"
-        )
+        hostile = "<?xml version='1.0'?>" f'<!DOCTYPE r [<!ENTITY xxe SYSTEM "{secret.as_uri()}">]>' "<r>&xxe;</r>"
         pre = XmlPreprocessor()
         # Two acceptable behaviours block the leak: the parser refuses
         # the document outright (XMLSyntaxError, which inherits from
