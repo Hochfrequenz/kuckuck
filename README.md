@@ -69,8 +69,20 @@ Behandle den pseudonymisierten Output deshalb weiterhin als personenbezogenes Da
 | Jira-/Confluence-Handles | Regex - `@user.name`, `[~accountid:...]`, `[~user]` |
 | Denylist-Einträge | Kunden-/Projektnamen aus einer Datei |
 
-Personen-Namen via NER folgen in einem späteren Release.
-Das MVP deckt die häufigsten Datenquellen (Mail-Signaturen, Jira-Reporter, Confluence-Mentions) bereits mit den Regex-Detektoren ab.
+Die Regex-Detektoren decken die häufigsten Datenquellen (Mail-Signaturen, Jira-Reporter, Confluence-Mentions) ohne ML ab.
+Klarnamen ohne Handle landen erst im Mapping, wenn der optionale NER-Detektor (`--ner`, separates Release) aktiv ist.
+
+### Unterstützte Eingabeformate
+
+Kuckuck wählt das passende Format automatisch über die Datei-Endung; `--format` setzt es explizit.
+
+| Format | Endung | Was passiert |
+|---|---|---|
+| Plain Text | beliebig (`.txt`, kein Match) | Ganzer Inhalt geht durch die Detektoren - Default |
+| E-Mail | `.eml` | Header bleiben unangetastet, nur der Body wird verarbeitet; deutsche Signatur-Trigger und Quoted-Replies werden separat bearbeitet |
+| Outlook | `.msg` | Body wird extrahiert (Reihenfolge: HTML > RTF > Plain), Anhänge bleiben aussen vor (Warnung) |
+| Markdown | `.md` / `.markdown` | YAML-Frontmatter, Code-Blocks und Inline-Code werden nicht angefasst; Prosa, Listen, Footnotes und Reference-Links schon |
+| XML | `.xml` / `.html` | Text-Knoten und Attribut-Werte gehen durch die Detektoren; Tag-Struktur, Namespaces und CDATA bleiben erhalten |
 
 ## Installation
 
@@ -184,6 +196,21 @@ echo "Projekt Zugspitze" >> denylist.txt
 kuckuck brief.txt --denylist denylist.txt
 ```
 
+**Format-aware Verarbeitung (E-Mail, Markdown, XML):**
+
+```bash
+# Auto-Detection per Endung
+kuckuck mail.eml          # Header bleiben, Body wird pseudonymisiert
+kuckuck notiz.md          # Code-Blocks und Inline-Code bleiben unangetastet
+kuckuck export.xml        # Tag-Struktur bleibt, Text und Attribute gehen durch
+
+# Explizit setzen, wenn die Endung nicht passt
+kuckuck irgendwas --format eml
+kuckuck doc.txt --format md
+```
+
+Format-Auto-Detection: `.eml -> eml`, `.msg -> msg`, `.md`/`.markdown -> md`, `.xml`/`.html -> xml`, alles andere -> `text`.
+
 **Sequenzielle Tokens statt HMAC (kürzer im Output, aber nicht cross-doc-stabil):**
 
 ```bash
@@ -288,6 +315,13 @@ Erkennung im aktuellen MVP:
 
 Personen-Namen-Erkennung (`[[PERSON_...]]`) folgt in einer späteren Kuckuck-Version via NER-Modell - bis dahin nur Regex-basierte Erkennung.
 
+Eingabeformate, die Kuckuck strukturiert erkennt:
+- `.eml` (E-Mail mit Headern + Body, Signatur-Trigger werden separiert)
+- `.msg` (Outlook, HTML > RTF > Plain Body, Anhänge bleiben aussen vor)
+- `.md` (Markdown, Code-Blocks und YAML-Frontmatter bleiben unangetastet)
+- `.xml` / `.html` (Tag-Struktur bleibt, Text und Attribute gehen durch)
+- alles andere als Plain-Text
+
 Gleiche Namen bekommen den gleichen Token, auch dokumentübergreifend.
 Du (Assistent) darfst bei der Analyse annehmen, dass `[[HANDLE_abc]]` mit gleichem Suffix in mehreren Dokumenten dieselbe Entität ist - ohne den Klartext zu benötigen.
 
@@ -312,8 +346,9 @@ Wenn du pseudonymisierten Text per API an Claude, GPT oder Gemini schickst, erg�
 - **Kontextuelle Re-Identifikation:** „Der Geschäftsführer eines mittelständischen Bäckereibetriebs in 49716 Meppen" ist praktisch eindeutig - Kuckuck ersetzt Namen, nicht Kontexte.
 Kurze Texte sind sicherer als lange.
 - **Seltene Namen / Initialen:** Regex kennt keine Namen - bis zum NER-Release (geplant als PR 2) werden Klarnamen nur erkannt, wenn sie in Handles oder der Denylist stehen.
-- **Formate:** Plain-Text.
-E-Mails (`.eml`, `.msg`), Markdown und XML werden in PR 3 format-aware behandelt - aktuell läuft die Pipeline naiv über den Rohtext, Code-Blocks und Attribute können false-positive Ersetzungen bekommen.
+- **Formate:** Plain-Text plus format-aware Verarbeitung für `.eml`, `.msg`, Markdown und XML/HTML (siehe Tabelle oben).
+Outlook-`.msg`-Dateien geben keinen byte-faithful Round-Trip zurück - nur den pseudonymisierten Body als Plain-Text, weil das compound-document Re-Roundtrippen nicht das Ziel ist.
+Anhänge in `.msg` werden nicht angefasst.
 - **Linkage-Risiko:** Durch die Cross-Document-Konsistenz kann ein Cloud-LLM-Provider - wenn er Logs speichert - Tokens über Sessions verketten.
 Für Anthropic/OpenAI B2B mit ausgeschalteter Trainings-Nutzung in der Praxis irrelevant, im eigenen Compliance-Kontext aber evaluieren.
 
