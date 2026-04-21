@@ -79,9 +79,7 @@ def load_key(path: Path | str | None = None) -> SecretStr:
                 raise ValueError(f"key file is empty: {candidate}")
             return SecretStr(raw)
     searched = ", ".join(str(p) for p in _candidate_paths(path))
-    raise KeyNotFoundError(
-        f"No Kuckuck key file found. Searched: {searched}. Run 'kuckuck init-key' to create one."
-    )
+    raise KeyNotFoundError(f"No Kuckuck key file found. Searched: {searched}. Run 'kuckuck init-key' to create one.")
 
 
 def load_default_key() -> SecretStr:

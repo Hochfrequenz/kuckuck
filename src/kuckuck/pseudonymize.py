@@ -24,9 +24,7 @@ TOKEN_TEMPLATE = "[[{entity}_{token}]]"
 _OWN_TOKEN_RE = re.compile(r"\[\[(?P<entity>[A-Z]+)_(?P<token>[a-z0-9]+(?:-\d+)?)\]\]")
 
 
-def build_default_detectors(
-    *, denylist: list[str] | None = None, phone_region: str = "DE"
-) -> list[Detector]:
+def build_default_detectors(*, denylist: list[str] | None = None, phone_region: str = "DE") -> list[Detector]:
     """Return the built-in detector set for the MVP regex pipeline."""
     detectors: list[Detector] = [
         EmailDetector(),
@@ -80,9 +78,7 @@ def _allocate_token(
 ) -> str:
     """Return the token suffix for *span*; updates *mapping* and counters."""
     if sequential_counters is None:
-        return mapping.get_or_allocate(
-            master, original=span.text, entity_type=span.entity_type.value
-        )
+        return mapping.get_or_allocate(master, original=span.text, entity_type=span.entity_type.value)
     counter = sequential_counters.get(span.entity_type, 0) + 1
     sequential_counters[span.entity_type] = counter
     token = str(counter)

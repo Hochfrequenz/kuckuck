@@ -125,9 +125,7 @@ class TestLoadKey:
         monkeypatch.chdir(cwd)
         assert load_key().get_secret_value() == "projectwins"
 
-    def test_missing_everywhere_raises_key_not_found(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_everywhere_raises_key_not_found(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fake_home = tmp_path / "empty-home"
         fake_home.mkdir()
         cwd = tmp_path / "empty-work"

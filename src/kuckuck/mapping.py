@@ -30,8 +30,7 @@ import json
 from pathlib import Path
 from typing import Iterator
 
-from pydantic import BaseModel, Field
-from pydantic import SecretStr
+from pydantic import BaseModel, Field, SecretStr
 
 from kuckuck.crypto import decrypt_mapping_payload, encrypt_mapping_payload, hmac_token, normalize
 
@@ -154,7 +153,5 @@ def load_mapping(master: SecretStr, path: Path | str) -> Mapping:
         raise MappingCorruptError(f"unsupported mapping schema version: {version}")
     plaintext = decrypt_mapping_payload(master, nonce, ciphertext)
     payload = json.loads(plaintext.decode("utf-8"))
-    entries = {
-        token: MappingEntry(**entry) for token, entry in payload.get("entries", {}).items()
-    }
+    entries = {token: MappingEntry(**entry) for token, entry in payload.get("entries", {}).items()}
     return Mapping(entries=entries, key_id=key_id)

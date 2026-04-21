@@ -10,8 +10,8 @@ from pydantic import SecretStr
 from kuckuck.crypto import hmac_token
 from kuckuck.mapping import (
     MAGIC,
-    MappingCorruptError,
     Mapping,
+    MappingCorruptError,
     MappingEntry,
     load_mapping,
     save_mapping,

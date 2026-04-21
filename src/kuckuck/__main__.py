@@ -65,9 +65,7 @@ def cmd_init_key(
         "--project",
         help=f"Write to {PROJECT_KEY_NAME} in CWD instead of {DEFAULT_KEY_PATH}.",
     ),
-    key_file: Path | None = typer.Option(
-        None, "--key-file", "-k", help="Explicit path for the new key file."
-    ),
+    key_file: Path | None = typer.Option(None, "--key-file", "-k", help="Explicit path for the new key file."),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing key file."),
 ) -> None:
     """Generate a new master secret."""
@@ -87,29 +85,21 @@ def cmd_init_key(
 
 @app.command("run")
 def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
-    paths: list[Path] = typer.Argument(
-        ..., exists=True, help="Files to pseudonymize in place."
-    ),
-    key_file: Path | None = typer.Option(
-        None, "--key-file", "-k", help="Override key lookup."
-    ),
+    paths: list[Path] = typer.Argument(..., exists=True, help="Files to pseudonymize in place."),
+    key_file: Path | None = typer.Option(None, "--key-file", "-k", help="Override key lookup."),
     output_dir: Path | None = typer.Option(
         None,
         "--output-dir",
         "-o",
         help="Write results to this directory instead of overwriting in place.",
     ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", "-n", help="Show changes without writing anything."
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show changes without writing anything."),
     sequential_tokens: bool = typer.Option(
         False,
         "--sequential-tokens",
         help="Use [[PERSON_1]]-style counters per document (not cross-document stable).",
     ),
-    denylist: Path | None = typer.Option(
-        None, "--denylist", help="Path to a denylist file (one entry per line)."
-    ),
+    denylist: Path | None = typer.Option(None, "--denylist", help="Path to a denylist file (one entry per line)."),
     phone_region: str = typer.Option(
         "DE", "--phone-region", help="Default ISO country code for parsing phone numbers."
     ),
@@ -138,12 +128,12 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         text = path.read_text(encoding="utf-8")
         result = pseudonymize_text(text, master, detectors, mapping=mapping, sequential_tokens=sequential_tokens)
         if dry_run:
-            typer.echo(f"--- {path} → {len(result.replaced)} replacements ---")
+            typer.echo(f"--- {path} -> {len(result.replaced)} replacements ---")
             typer.echo(result.text)
             continue
         target_text.write_text(result.text, encoding="utf-8")
         save_mapping(master, result.mapping, target_map)
-        typer.echo(f"{path} → {target_text} ({len(result.replaced)} replacements, map: {target_map})")
+        typer.echo(f"{path} -> {target_text} ({len(result.replaced)} replacements, map: {target_map})")
 
 
 @app.command("restore")
@@ -176,7 +166,7 @@ def cmd_restore(
             continue
         destination = output_dir / path.name if output_dir is not None else path
         destination.write_text(restored, encoding="utf-8")
-        typer.echo(f"{path} → {destination}")
+        typer.echo(f"{path} -> {destination}")
 
 
 @app.command("inspect")

@@ -23,7 +23,8 @@ import hmac
 import unicodedata
 from hashlib import sha256
 
-from cryptography.hazmat.primitives import hashes, hmac as _cryptography_hmac
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hmac as _cryptography_hmac
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from pydantic import SecretStr
