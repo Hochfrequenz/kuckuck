@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import os
 import secrets
+import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -39,13 +40,32 @@ class KeyNotFoundError(FileNotFoundError):
 class KuckuckSettings(BaseSettings):
     """Runtime settings, populated from environment variables and ``.env`` files.
 
-    Additional user-facing configuration (default denylist path, token prefix
-    overrides, etc.) is added here as the feature set grows.
+    Currently only exposes the key-file path override. New user-facing
+    options (default denylist path, token prefix overrides, …) attach here
+    as the feature set grows. Reading ``.env`` via pydantic-settings is
+    scoped to this class and does **not** mutate :data:`os.environ` — the
+    ``.env`` file stays private to Kuckuck.
     """
 
     model_config = SettingsConfigDict(env_prefix="KUCKUCK_", env_file=".env", extra="ignore")
 
     key_file: str | None = None
+
+
+def _env_override(env_var: str = KEY_ENV_VAR) -> str | None:
+    """Look up *env_var* in ``os.environ`` and, if absent, in ``.env``.
+
+    Unlike :func:`dotenv.load_dotenv`, this does **not** mutate
+    :data:`os.environ` — so ``.env`` values stay out of subprocesses and
+    out of other library code that reads the environment.
+    """
+    value = os.environ.get(env_var)
+    if value:
+        return value
+    local_env = Path.cwd() / ".env"
+    if local_env.is_file():
+        return dotenv_values(local_env).get(env_var)
+    return None
 
 
 def _candidate_paths(explicit: Path | str | None) -> list[Path]:
@@ -55,10 +75,9 @@ def _candidate_paths(explicit: Path | str | None) -> list[Path]:
         candidates.append(Path(explicit).expanduser())
         return candidates
 
-    load_dotenv()  # best-effort; missing .env is fine
-    env_override = os.environ.get(KEY_ENV_VAR)
-    if env_override:
-        candidates.append(Path(env_override).expanduser())
+    env_value = _env_override()
+    if env_value:
+        candidates.append(Path(env_value).expanduser())
 
     candidates.append(Path.cwd() / PROJECT_KEY_NAME)
     candidates.append(Path(DEFAULT_KEY_PATH).expanduser())
@@ -97,15 +116,37 @@ def init_key(path: Path | str | None = None, *, overwrite: bool = False) -> Path
 
     Creates parent directories as needed. Refuses to overwrite existing files
     unless *overwrite* is ``True``.
+
+    The secret is written atomically with mode ``0o600`` on POSIX so it is
+    never briefly readable by other local users. On Windows the OS access
+    model differs — the file inherits the user-profile ACL, which is
+    equivalent to user-only access on default installations.
     """
     target = Path(path).expanduser() if path is not None else Path(DEFAULT_KEY_PATH).expanduser()
     if target.exists() and not overwrite:
         raise FileExistsError(f"key file already exists: {target} (pass overwrite=True to replace)")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(generate_key() + "\n", encoding="utf-8")
-    try:
-        target.chmod(0o600)
-    except (NotImplementedError, PermissionError):
-        # Windows / non-POSIX — best effort; the OS handles access control differently.
-        pass
+
+    data = (generate_key() + "\n").encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    mode = 0o600
+
+    if sys.platform == "win32":
+        # Windows ignores the `mode` argument for most practical purposes;
+        # just use pathlib for simplicity and let the profile ACL protect it.
+        target.write_bytes(data)
+    else:
+        fd = os.open(str(target), flags, mode)
+        try:
+            os.write(fd, data)
+        finally:
+            os.close(fd)
+        # Belt-and-braces: if the umask masked out user-only perms on some
+        # exotic filesystem, re-assert them now.
+        try:
+            os.chmod(str(target), mode)
+        except (NotImplementedError, PermissionError):
+            pass
     return target

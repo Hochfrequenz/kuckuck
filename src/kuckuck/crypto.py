@@ -2,9 +2,10 @@
 
 Design notes
 ------------
-The user-facing **master secret** lives in ``.kuckuck-key`` as a hex string.
-Two subkeys are derived from it via HKDF-SHA256 so that key rotation and
-purpose separation are possible without asking users to manage two secrets:
+The user-facing **master secret** lives in ``.kuckuck-key`` as a 64-character
+hex string (256 bits of entropy from :func:`secrets.token_hex`). Two subkeys
+are derived from it via HKDF-SHA256 so that key rotation and purpose
+separation are possible without asking users to manage two secrets:
 
 * ``HMAC`` subkey — used for token fingerprinting. Output is truncated to a
   short hex prefix to keep tokens readable for the LLM while being stable
@@ -12,14 +13,25 @@ purpose separation are possible without asking users to manage two secrets:
   mapping layer via a counter suffix.
 * ``MAP`` subkey — used as the AES-GCM key for the sidecar mapping file.
 
+We intentionally **do not** accept low-entropy passphrases as master secrets:
+HKDF has no work factor (it is a KDF for pre-uniform entropy, not a password
+hash), so a passphrase-shaped input would make both the AES-GCM sidecar and
+the HMAC tokens offline brute-forceable.
+
 All string input to the HMAC is normalized to Unicode NFC to make
 ``"Müller"`` hash identically regardless of whether the source was
 macOS (often NFD) or Windows (usually NFC).
+
+AES-GCM usage binds the mapping-file header (magic bytes, schema version,
+key-id) as *associated data* so that an attacker who can rewrite the
+sidecar cannot swap key-id fields or schema-version bytes while keeping a
+valid authentication tag — see :mod:`kuckuck.mapping` for the wire format.
 """
 
 from __future__ import annotations
 
 import hmac
+import re
 import unicodedata
 from hashlib import sha256
 
@@ -58,22 +70,38 @@ _HEX_MASTER_LEN = 64
 
 _HEX_CHARS = frozenset("0123456789abcdefABCDEF")
 
+#: Regex that matches *any* whitespace, including NBSP, zero-width spaces
+#: (U+200B..U+200D), and the BOM (U+FEFF) — all common copy-paste artifacts
+#: from password managers and browsers. Python's ``\s`` does not include the
+#: zero-width range by default, so we list them explicitly.
+_WHITESPACE_RE = re.compile(r"[\s\u200b\u200c\u200d\ufeff]+")
+
+
+class InvalidMasterError(ValueError):
+    """Raised when the master secret is not a valid 64-char hex key."""
+
 
 def _master_bytes(master: SecretStr) -> bytes:
     """Return the master secret as raw bytes.
 
-    The secret is treated as hex **only** when it is exactly
-    :data:`_HEX_MASTER_LEN` characters long and every character is a valid
-    hex digit. Any other input is treated as a raw UTF-8 passphrase.
+    Accepts **only** a 64-character hex string (32 bytes of entropy). Low-
+    entropy passphrases are rejected because HKDF has no work factor; a
+    passphrase-shaped master would render both the AES-GCM sidecar and the
+    HMAC tokens offline brute-forceable. Use :func:`generate_key` to produce
+    a conformant master.
 
-    This strict rule avoids an earlier ambiguity where ``"abc123"`` (valid
-    hex, 3 bytes) and ``"abc12"`` (invalid hex, 5 UTF-8 bytes) silently
-    produced unrelated keys — a typo would have been undetectable.
+    Trims any Unicode whitespace from both ends so copy-paste through
+    password managers or browsers (which frequently inject NBSP, ZWSP, or
+    trailing newlines) works reliably.
     """
-    raw = master.get_secret_value().strip()
-    if len(raw) == _HEX_MASTER_LEN and all(c in _HEX_CHARS for c in raw):
-        return bytes.fromhex(raw)
-    return raw.encode("utf-8")
+    raw = _WHITESPACE_RE.sub("", master.get_secret_value())
+    if len(raw) != _HEX_MASTER_LEN or not all(c in _HEX_CHARS for c in raw):
+        raise InvalidMasterError(
+            f"master secret must be exactly {_HEX_MASTER_LEN} hex characters "
+            "(256 bits). Generate one with `kuckuck init-key` or "
+            "`secrets.token_hex(32)`."
+        )
+    return bytes.fromhex(raw)
 
 
 def _derive(master: SecretStr, info: bytes, length: int) -> bytes:
@@ -112,25 +140,35 @@ def full_hmac(master: SecretStr, value: str) -> str:
     return hmac.new(subkey, normalized, sha256).hexdigest()
 
 
-def encrypt_mapping_payload(master: SecretStr, plaintext: bytes) -> tuple[bytes, bytes]:
+def encrypt_mapping_payload(
+    master: SecretStr, plaintext: bytes, *, associated_data: bytes = b""
+) -> tuple[bytes, bytes]:
     """Encrypt *plaintext* with the AES-GCM mapping subkey.
 
     Returns a tuple ``(nonce, ciphertext)`` where *ciphertext* includes the
-    authentication tag. The caller is responsible for serializing nonce and
-    ciphertext together (see :mod:`kuckuck.mapping`).
+    authentication tag. *associated_data* binds sidecar header fields
+    (magic, schema version, key-id) to the tag so that attackers can't tamper
+    with those bytes without invalidating the authentication.
+
+    Nonces are pulled from :func:`os.urandom`. NIST SP 800-38D recommends
+    random nonces for fewer than 2^32 invocations per key — well outside any
+    realistic Kuckuck usage. Documents this cap in
+    :mod:`kuckuck.mapping` as a rotation trigger.
     """
     key = derive_map_key(master)
     nonce = _secure_random(AES_NONCE_BYTES)
     aesgcm = AESGCM(key)
-    ciphertext = aesgcm.encrypt(nonce, plaintext, associated_data=None)
+    ciphertext = aesgcm.encrypt(nonce, plaintext, associated_data=associated_data)
     return nonce, ciphertext
 
 
-def decrypt_mapping_payload(master: SecretStr, nonce: bytes, ciphertext: bytes) -> bytes:
+def decrypt_mapping_payload(
+    master: SecretStr, nonce: bytes, ciphertext: bytes, *, associated_data: bytes = b""
+) -> bytes:
     """Decrypt an AES-GCM mapping payload. Raises on authentication failure."""
     key = derive_map_key(master)
     aesgcm = AESGCM(key)
-    return aesgcm.decrypt(nonce, ciphertext, associated_data=None)
+    return aesgcm.decrypt(nonce, ciphertext, associated_data=associated_data)
 
 
 def _secure_random(n_bytes: int) -> bytes:

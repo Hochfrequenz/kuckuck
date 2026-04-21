@@ -9,6 +9,7 @@ from pydantic import SecretStr
 from kuckuck.crypto import (
     AES_NONCE_BYTES,
     HMAC_HEX_LENGTH,
+    InvalidMasterError,
     _master_bytes,
     decrypt_mapping_payload,
     derive_hmac_key,
@@ -60,11 +61,11 @@ class TestHmacToken:
         decomposed = hmac_token(MASTER_HEX, "Müller")
         assert composed == decomposed
 
-    def test_passphrase_master_is_accepted(self) -> None:
-        # Non-hex master should be treated as UTF-8 passphrase
+    def test_passphrase_master_is_rejected(self) -> None:
+        # Passphrases can't be used as master — HKDF has no work factor.
         passphrase = SecretStr("a simple passphrase")
-        token = hmac_token(passphrase, "Max Müller")
-        assert len(token) == HMAC_HEX_LENGTH
+        with pytest.raises(InvalidMasterError):
+            hmac_token(passphrase, "Max Müller")
 
 
 class TestFullHmac:
@@ -116,14 +117,8 @@ class TestMappingEncryption:
             decrypt_mapping_payload(MASTER_HEX, nonce, tampered)
 
 
-class TestMasterBytesHexStrictness:
-    """Guards the :func:`_master_bytes` hex-interpretation rule.
-
-    See the module docstring: hex is accepted **only** for 64-char, all-hex
-    strings. A previous loose rule silently interpreted short strings like
-    ``"abc123"`` as 3 bytes of hex, making typo-induced key drift
-    undetectable.
-    """
+class TestMasterBytes:
+    """Only a 64-char hex string is accepted as a master secret."""
 
     def test_full_length_hex_is_decoded(self) -> None:
         hex_str = "00" * 32
@@ -133,23 +128,28 @@ class TestMasterBytesHexStrictness:
         hex_str = "aA" * 32
         assert len(_master_bytes(SecretStr(hex_str))) == 32
 
-    def test_short_hexlike_is_treated_as_utf8(self) -> None:
-        # "abc123" could be 3 bytes of hex, but we now require full length.
-        assert _master_bytes(SecretStr("abc123")) == b"abc123"
+    def test_short_hexlike_is_rejected(self) -> None:
+        # Passphrases must not become silently-weak HKDF inputs.
+        with pytest.raises(InvalidMasterError):
+            _master_bytes(SecretStr("abc123"))
 
-    def test_non_hex_chars_fall_back_to_utf8(self) -> None:
-        # A 64-char non-hex passphrase is still a passphrase, not hex.
+    def test_64_char_non_hex_is_rejected(self) -> None:
         passphrase = "x" * 64
-        assert _master_bytes(SecretStr(passphrase)) == passphrase.encode("utf-8")
+        with pytest.raises(InvalidMasterError):
+            _master_bytes(SecretStr(passphrase))
 
-    def test_trailing_whitespace_is_stripped(self) -> None:
+    def test_leading_trailing_whitespace_is_stripped(self) -> None:
         hex_str = "00" * 32
         assert _master_bytes(SecretStr(hex_str + "\n")) == b"\x00" * 32
 
-    def test_typo_does_not_silently_share_prefix_with_original(self) -> None:
-        # 'abc12' vs 'abc123' previously produced unrelated bytes silently;
-        # now both are UTF-8 and the difference is obvious.
-        a = _master_bytes(SecretStr("abc12"))
-        b = _master_bytes(SecretStr("abc123"))
-        assert a == b"abc12"
-        assert b == b"abc123"
+    def test_unicode_whitespace_is_stripped(self) -> None:
+        # Copy-paste through password managers sometimes injects NBSP/ZWSP;
+        # the strict rule must survive that.
+        hex_str = "00" * 32
+        with_nbsp = "\u00a0" + hex_str + "\u200b"
+        assert _master_bytes(SecretStr(with_nbsp)) == b"\x00" * 32
+
+    def test_invalid_hex_chars_rejected(self) -> None:
+        with pytest.raises(InvalidMasterError):
+            # 64 chars but contains 'z' which is not a hex digit
+            _master_bytes(SecretStr("z" * 64))
