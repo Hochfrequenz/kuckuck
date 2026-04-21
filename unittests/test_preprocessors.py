@@ -322,11 +322,26 @@ class TestXmlPreprocessor:
     def test_xxe_external_entity_blocked(self, tmp_path: Path) -> None:
         # XML External Entity attack: a hostile .xml file should not be
         # able to leak local file contents through entity expansion.
+        # Path.as_uri() produces a platform-correct file:// URI - on
+        # Windows that means forward slashes, otherwise lxml rejects
+        # the URI itself before our hardening can kick in.
         secret = tmp_path / "secret.txt"
         secret.write_text("LEAKED-SECRET-PAYLOAD", encoding="utf-8")
-        hostile = "<?xml version='1.0'?>" f'<!DOCTYPE r [<!ENTITY xxe SYSTEM "file://{secret}">]>' "<r>&xxe;</r>"
+        hostile = (
+            "<?xml version='1.0'?>"
+            f'<!DOCTYPE r [<!ENTITY xxe SYSTEM "{secret.as_uri()}">]>'
+            "<r>&xxe;</r>"
+        )
         pre = XmlPreprocessor()
-        chunks = pre.extract(hostile)
+        # Two acceptable behaviours block the leak: the parser refuses
+        # the document outright (XMLSyntaxError, which inherits from
+        # SyntaxError) or it silently drops the entity expansion. Only
+        # the case where the secret actually appears in the extracted
+        # text is a real failure.
+        try:
+            chunks = pre.extract(hostile)
+        except SyntaxError:
+            return
         joined = "".join(c.text for c in chunks)
         assert "LEAKED-SECRET-PAYLOAD" not in joined
 
