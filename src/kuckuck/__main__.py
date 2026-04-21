@@ -28,6 +28,13 @@ from cryptography.exceptions import InvalidTag
 from pydantic import SecretStr
 
 from kuckuck.config import DEFAULT_KEY_PATH, PROJECT_KEY_NAME, KeyNotFoundError, init_key, load_key
+from kuckuck.detectors.ner import (
+    DEFAULT_MODEL_ID,
+    default_cache_root,
+    default_model_path,
+    is_gliner_installed,
+    is_model_available,
+)
 from kuckuck.mapping import Mapping, MappingCorruptError, load_mapping, save_mapping
 from kuckuck.preprocessors import (
     EmlPreprocessor,
@@ -56,7 +63,9 @@ app = typer.Typer(
 )
 
 #: Names of explicit subcommands — kept in sync with the ``@app.command`` registrations.
-_SUBCOMMANDS = frozenset({"init-key", "restore", "inspect", "list-detectors", "version", "run"})
+_SUBCOMMANDS = frozenset(
+    {"init-key", "restore", "inspect", "list-detectors", "version", "run", "fetch-model"}
+)
 
 #: Return codes used across the CLI. Stable so shell scripts can dispatch on them.
 EXIT_OK = 0
@@ -66,6 +75,7 @@ EXIT_KEY_NOT_FOUND = 3
 EXIT_MAPPING_MISSING = 4
 EXIT_MAPPING_CORRUPT = 5
 EXIT_MAPPING_WRONG_KEY = 6
+EXIT_MODEL_MISSING = 7
 
 
 #: Map ``--format`` choices to their preprocessor implementations.
@@ -190,6 +200,11 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
             "is not round-tripped); attachments are dropped with a warning."
         ),
     ),
+    ner: bool = typer.Option(
+        False,
+        "--ner/--no-ner",
+        help="Enable the GLiNER PERSON detector. Requires 'kuckuck[ner]' installed and 'kuckuck fetch-model' run once.",
+    ),
 ) -> None:
     """Pseudonymize one or more text files.
 
@@ -202,8 +217,26 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         typer.echo(str(exc), err=True)
         raise typer.Exit(EXIT_KEY_NOT_FOUND) from exc
 
+    if ner:
+        # Hard error path: when the user opts in via the flag we do not want
+        # silent regex-only fallback. The library API stays soft.
+        if not is_gliner_installed():
+            typer.echo(
+                "NER requested via --ner but the optional 'gliner' package is not installed.\n"
+                "Install it via: pip install 'kuckuck[ner]'",
+                err=True,
+            )
+            raise typer.Exit(EXIT_MODEL_MISSING)
+        if not is_model_available():
+            typer.echo(
+                f"NER requested via --ner but no model was found at {default_model_path()}.\n"
+                "Download it via: kuckuck fetch-model",
+                err=True,
+            )
+            raise typer.Exit(EXIT_MODEL_MISSING)
+
     denylist_entries = _read_denylist(denylist)
-    detectors = build_default_detectors(denylist=denylist_entries, phone_region=phone_region)
+    detectors = build_default_detectors(denylist=denylist_entries, phone_region=phone_region, use_ner=ner)
 
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -352,8 +385,70 @@ def cmd_inspect(
 @app.command("list-detectors")
 def cmd_list_detectors() -> None:
     """Print every built-in detector with its default priority."""
-    for det in build_default_detectors(denylist=["__placeholder__"]):
+    detectors = build_default_detectors(denylist=["__placeholder__"])
+    if is_gliner_installed() and is_model_available():
+        # Surface the NER detector in the listing only when actually usable.
+        from kuckuck.detectors.ner import NerDetector  # pylint: disable=import-outside-toplevel
+
+        detectors.append(NerDetector())
+    for det in detectors:
         typer.echo(f"{det.name:12} priority={det.priority:<4} type={det.entity_type.value}")
+
+
+@app.command("fetch-model")
+def cmd_fetch_model(
+    model_id: str = typer.Option(
+        DEFAULT_MODEL_ID,
+        "--model-id",
+        help="HuggingFace repo id of the GLiNER model to download.",
+    ),
+    cache_dir: Path | None = typer.Option(
+        None,
+        "--cache-dir",
+        help=f"Target directory for the model snapshot (default: {default_cache_root()}).",
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Re-download even if the model is already present."),
+) -> None:
+    """Download the GLiNER model into the local model cache.
+
+    The model is fetched once and reused across invocations. Default location
+    is ``~/.cache/kuckuck/models/<slug>``. Network access is required only for
+    this step; subsequent ``--ner`` runs work entirely offline.
+    """
+    if not is_gliner_installed():
+        typer.echo(
+            "Cannot fetch model: the optional 'gliner' package is not installed.\n"
+            "Install it via: pip install 'kuckuck[ner]'",
+            err=True,
+        )
+        raise typer.Exit(EXIT_MODEL_MISSING)
+
+    root = (cache_dir or default_cache_root()).expanduser()
+    slug = model_id.split("/")[-1]
+    target = root / slug
+
+    if target.is_dir() and is_model_available(target) and not force:
+        typer.echo(f"Model already present: {target}")
+        typer.echo("Pass --force to re-download.")
+        return
+
+    try:
+        # Imported lazily so the CLI starts up without huggingface_hub on the
+        # critical path (the dependency is only present in the [ner] extra).
+        # pylint: disable-next=import-outside-toplevel,import-error
+        from huggingface_hub import snapshot_download  # type: ignore[import-not-found]
+    except ImportError as exc:
+        typer.echo(
+            "Cannot fetch model: huggingface_hub is missing. "
+            "Reinstall 'kuckuck[ner]' to repair the install.",
+            err=True,
+        )
+        raise typer.Exit(EXIT_MODEL_MISSING) from exc
+
+    target.mkdir(parents=True, exist_ok=True)
+    typer.echo(f"Downloading GLiNER model '{model_id}' to {target} ...")
+    snapshot_download(repo_id=model_id, local_dir=str(target))
+    typer.echo(f"Done: {target}")
 
 
 @app.command("version")
