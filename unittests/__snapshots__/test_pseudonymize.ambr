@@ -11,5 +11,5 @@
   '''
 # ---
 # name: TestSnapshot.test_with_denylist
-  'Unser Kunde [[DENYLIST_5cd3e8f0]] hat einen Bug gemeldet bei [[EMAIL_842ef308]]'
+  'Unser Kunde [[TERM_5cd3e8f0]] hat einen Bug gemeldet bei [[EMAIL_842ef308]]'
 # ---

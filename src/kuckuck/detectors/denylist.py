@@ -38,8 +38,8 @@ class DenylistDetector:
     """
 
     name = "denylist"
-    entity_type = EntityType.DENYLIST
-    priority = Priority.DENYLIST
+    entity_type = EntityType.TERM
+    priority = Priority.TERM
 
     def __init__(self, entries: Iterable[str]) -> None:
         clean = sorted({normalize(e) for e in entries if e}, key=len, reverse=True)

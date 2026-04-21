@@ -128,7 +128,7 @@ class TestDenylistDetector:
         spans = det.detect("Wir haben Alpha GmbH als Kunden.")
         assert len(spans) == 1
         assert spans[0].text == "Alpha GmbH"
-        assert spans[0].entity_type == EntityType.DENYLIST
+        assert spans[0].entity_type == EntityType.TERM
 
     def test_multiple_entries(self) -> None:
         det = DenylistDetector(["Alpha GmbH", "Beta AG"])

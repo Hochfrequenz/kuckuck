@@ -284,7 +284,7 @@ Erkennung im aktuellen MVP:
 - `[[EMAIL_...]]` - E-Mail-Adresse
 - `[[PHONE_...]]` - Telefonnummer
 - `[[HANDLE_...]]` - Jira-/Confluence-Mention
-- `[[DENYLIST_...]]` - Eintrag aus `denylist.txt` (Kunden/Projekte)
+- `[[TERM_...]]` - Eintrag aus `denylist.txt` (Kunden/Projekte)
 
 Personen-Namen-Erkennung (`[[PERSON_...]]`) folgt in einer späteren Kuckuck-Version via NER-Modell - bis dahin nur Regex-basierte Erkennung.
 

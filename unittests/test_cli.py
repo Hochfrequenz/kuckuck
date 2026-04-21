@@ -163,7 +163,7 @@ class TestRun:
             ["run", str(source), "--key-file", str(key_file), "--denylist", str(denylist)],
         )
         assert result.exit_code == 0
-        assert "[[DENYLIST_" in source.read_text(encoding="utf-8")
+        assert "[[TERM_" in source.read_text(encoding="utf-8")
 
 
 class TestRestore:

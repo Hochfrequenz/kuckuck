@@ -15,13 +15,19 @@ class EntityType(StrEnum):
     values while still allowing enum identity checks. New members can be
     added without breaking persistence — the stored mapping keeps the raw
     string value.
+
+    ``TERM`` covers detections from the user-configured denylist (customer
+    names, project codenames). The enum value is deliberately short and
+    generic because it is the token prefix that the LLM sees in the
+    pseudonymized text — ``[[TERM_...]]`` leaks less implementation detail
+    than ``[[DENYLIST_...]]`` would.
     """
 
     PERSON = "PERSON"
     EMAIL = "EMAIL"
     PHONE = "PHONE"
     HANDLE = "HANDLE"
-    DENYLIST = "DENYLIST"
+    TERM = "TERM"
 
 
 class Priority:
@@ -34,7 +40,7 @@ class Priority:
     EMAIL = 100
     PHONE = 90
     HANDLE = 80
-    DENYLIST = 70
+    TERM = 70
     PERSON = 10  # NER detector — lowest priority, yields to regex matches on the same span.
 
 
