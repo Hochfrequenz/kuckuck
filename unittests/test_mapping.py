@@ -5,9 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pydantic import SecretStr
-
 from cryptography.exceptions import InvalidTag
+from pydantic import SecretStr
 
 from kuckuck.crypto import hmac_token
 from kuckuck.mapping import (

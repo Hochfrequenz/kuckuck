@@ -184,9 +184,7 @@ class TestRestore:
         result = runner.invoke(app, ["restore", str(source), "--key-file", str(key_file)])
         assert result.exit_code == 4  # EXIT_MAPPING_MISSING
 
-    def test_restore_missing_key_exit_code(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_restore_missing_key_exit_code(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("KUCKUCK_KEY_FILE", raising=False)
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -221,9 +219,7 @@ class TestRestore:
 
 
 class TestInspectErrorPaths:
-    def test_inspect_missing_key_exit_code(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_inspect_missing_key_exit_code(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         map_path = tmp_path / "bogus.enc"
         map_path.write_bytes(b"dummy")
         monkeypatch.chdir(tmp_path)

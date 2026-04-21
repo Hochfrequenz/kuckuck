@@ -59,8 +59,7 @@ def _load_mapping_or_exit(master: SecretStr, path: Path) -> Mapping:
         raise typer.Exit(EXIT_MAPPING_CORRUPT) from exc
     except InvalidTag as exc:
         typer.echo(
-            f"Could not decrypt mapping: {path}\n"
-            f"The key does not match the one used to create this mapping.",
+            f"Could not decrypt mapping: {path}\n" f"The key does not match the one used to create this mapping.",
             err=True,
         )
         raise typer.Exit(EXIT_MAPPING_WRONG_KEY) from exc
@@ -162,18 +161,14 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
 @app.command("restore")
 def cmd_restore(
     paths: list[Path] = typer.Argument(..., exists=True, help="Pseudonymized files to restore in place."),
-    key_file: Path | None = typer.Option(
-        None, "--key-file", "-k", help="Override key lookup."
-    ),
+    key_file: Path | None = typer.Option(None, "--key-file", "-k", help="Override key lookup."),
     output_dir: Path | None = typer.Option(
         None,
         "--output-dir",
         "-o",
         help="Write restored output to this directory instead of overwriting in place.",
     ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", "-n", help="Print the restored text instead of writing it."
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Print the restored text instead of writing it."),
 ) -> None:
     """Restore original values into pseudonymized files using the sidecar mapping."""
     try:

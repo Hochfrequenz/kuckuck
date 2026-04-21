@@ -17,9 +17,7 @@ from kuckuck.detectors.base import EntityType, Priority, Span
 
 #: Greedy candidate pattern — anything that looks roughly ``local@domain.tld``.
 #: Validation is delegated to :func:`email_validator.validate_email`.
-_EMAIL_CANDIDATE_RE = re.compile(
-    r"(?<![\w.+-])[A-Za-z0-9][A-Za-z0-9._%+\-]*@[A-Za-z0-9][A-Za-z0-9.\-]*\.[A-Za-z]{2,}"
-)
+_EMAIL_CANDIDATE_RE = re.compile(r"(?<![\w.+-])[A-Za-z0-9][A-Za-z0-9._%+\-]*@[A-Za-z0-9][A-Za-z0-9.\-]*\.[A-Za-z]{2,}")
 
 
 class EmailDetector:

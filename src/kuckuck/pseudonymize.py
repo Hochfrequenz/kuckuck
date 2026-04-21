@@ -100,9 +100,7 @@ def _allocate_token(
 
     if span.entity_type not in sequential_counters:
         existing = [
-            int(tok)
-            for tok, entry in mapping.entries.items()
-            if tok.isdigit() and entry.entity_type == entity_type_str
+            int(tok) for tok, entry in mapping.entries.items() if tok.isdigit() and entry.entity_type == entity_type_str
         ]
         sequential_counters[span.entity_type] = max(existing, default=0)
 

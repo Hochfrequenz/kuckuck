@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import SecretStr
-
 from cryptography.exceptions import InvalidTag
+from pydantic import SecretStr
 
 from kuckuck.crypto import (
     AES_NONCE_BYTES,
