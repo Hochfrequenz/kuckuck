@@ -95,13 +95,19 @@ def _open_msg(source: str | bytes | Path, extract_msg_module: Any) -> Any:
 
 
 def _html_to_text(html: bytes | str) -> str:
-    """Strip HTML to a text body using :mod:`selectolax`."""
+    """Strip HTML to a text body using :mod:`selectolax`.
+
+    Drops ``<script>`` / ``<style>`` / ``<noscript>`` nodes so any
+    JavaScript or CSS payload does not flow through the detectors.
+    """
     # pylint: disable-next=import-outside-toplevel
     from selectolax.parser import HTMLParser
 
     if isinstance(html, bytes):
         html = html.decode("utf-8", errors="replace")
     parser = HTMLParser(html)
+    for node in parser.css("script, style, noscript"):
+        node.decompose()
     body = parser.body
     if body is None:
         return ""

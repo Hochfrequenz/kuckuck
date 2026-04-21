@@ -144,11 +144,18 @@ def _first_part(message: Message, content_type: str) -> str:
 
 
 def _html_to_text(html: str) -> str:
-    """Strip HTML to a text body using :mod:`selectolax`."""
+    """Strip HTML to a text body using :mod:`selectolax`.
+
+    ``<script>`` and ``<style>`` elements are removed before extraction
+    so JavaScript / CSS payloads don't end up in the LLM-bound text.
+    selectolax otherwise returns the textContent of those nodes verbatim.
+    """
     # pylint: disable-next=import-outside-toplevel
     from selectolax.parser import HTMLParser
 
     parser = HTMLParser(html)
+    for node in parser.css("script, style, noscript"):
+        node.decompose()
     body = parser.body
     if body is None:
         return ""
