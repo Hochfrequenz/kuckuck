@@ -34,10 +34,23 @@ class XmlPreprocessor:
     name = "xml"
 
     def __init__(self) -> None:
+        # XXE / billion-laughs hardening: refuse to load DTDs, do not
+        # resolve entity references, never touch the network. lxml 5.x
+        # leaves these on by default which would let an attacker leak
+        # local files through `<!ENTITY xxe SYSTEM "file:///etc/passwd">`.
         # remove_blank_text=False keeps the original whitespace between
         # tags so reassembled output matches the input byte-for-byte
-        # outside the chunks we deliberately rewrite.
-        self._parser = etree.XMLParser(strip_cdata=False, remove_blank_text=False)
+        # outside the chunks we deliberately rewrite. huge_tree=False is
+        # the default but stated explicitly so a future maintenance diff
+        # can't silently raise the resource limit.
+        self._parser = etree.XMLParser(
+            strip_cdata=False,
+            remove_blank_text=False,
+            resolve_entities=False,
+            no_network=True,
+            load_dtd=False,
+            huge_tree=False,
+        )
 
     def extract(self, source: str) -> list[Chunk]:
         """Return one chunk per non-empty text/tail/attribute slot."""
@@ -59,6 +72,11 @@ class XmlPreprocessor:
         tree = etree.fromstring(source.encode("utf-8"), self._parser)
         elements = [el for el in tree.iter() if isinstance(el.tag, str)]
         path_index = {self._element_path(el): el for el in elements}
+        # Track elements whose text was originally a CDATA section so we
+        # can re-wrap the new text on assignment. lxml drops the CDATA
+        # marker on .text = "..." otherwise, which silently breaks
+        # Confluence Storage Format macros that depend on it.
+        cdata_text_elements = _detect_cdata_text_elements(tree)
         for chunk in modified:
             if not isinstance(chunk.locator, tuple):
                 raise ValueError(f"Invalid xml chunk locator: {chunk.locator!r}")
@@ -68,7 +86,10 @@ class XmlPreprocessor:
                 continue
             new_value = chunk.text
             if slot == "text":
-                element.text = new_value
+                if path in cdata_text_elements:
+                    element.text = etree.CDATA(new_value)
+                else:
+                    element.text = new_value
             elif slot == "tail":
                 element.tail = new_value
             elif slot == "attr":
@@ -103,3 +124,25 @@ class XmlPreprocessor:
         document has no ``id`` attributes.
         """
         return str(element.getroottree().getpath(element))
+
+
+def _detect_cdata_text_elements(tree: Any) -> set[str]:
+    """Return paths of elements whose `.text` is a CDATA section in *tree*.
+
+    lxml exposes CDATA content as a regular `.text` string; the only way
+    to spot it is to re-serialise the element and look for the
+    ``<![CDATA[`` marker. Done once per reassemble call so the cost is
+    bounded by tree size, not chunk count.
+    """
+    cdata_paths: set[str] = set()
+    for element in tree.iter():
+        if not isinstance(element.tag, str):
+            continue
+        if element.text is None:
+            continue
+        # Only check elements with no children where text could be CDATA.
+        # Re-serialising a single element is cheap.
+        serialised = etree.tostring(element, encoding="unicode")
+        if "<![CDATA[" in serialised:
+            cdata_paths.add(str(element.getroottree().getpath(element)))
+    return cdata_paths
