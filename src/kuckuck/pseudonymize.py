@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
@@ -227,6 +228,53 @@ def _pseudonymize_with_preprocessor(  # pylint: disable=too-many-arguments,too-m
         chunk.text = result.text
         all_replaced.extend(result.replaced)
     rebuilt = preprocessor.reassemble(text, chunks)
+    return PseudonymizeResult(text=rebuilt, mapping=mapping, replaced=all_replaced)
+
+
+def pseudonymize_msg_file(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    path: Path,
+    master: SecretStr,
+    detectors: list[Detector] | None = None,
+    *,
+    mapping: Mapping | None = None,
+    sequential_tokens: bool = False,
+) -> PseudonymizeResult:
+    """Pseudonymize an Outlook ``.msg`` compound document at *path*.
+
+    .msg files are OLE binaries; they cannot be decoded as UTF-8 text.
+    This wrapper hands the path directly to :class:`MsgPreprocessor`,
+    pseudonymizes each extracted body chunk through the shared
+    detector / mapping plumbing, and returns the rebuilt plain-text body.
+
+    Output is intentionally text-only: round-tripping the .msg compound
+    structure is out of scope. Callers wanting to preserve the original
+    binary file should keep a copy before invoking this helper.
+    """
+    # Imported here so the optional preprocessors module isn't loaded
+    # at import time of pseudonymize (keeps the cold-start cheap).
+    from kuckuck.preprocessors.msg import MsgPreprocessor  # pylint: disable=import-outside-toplevel
+
+    if detectors is None:
+        detectors = build_default_detectors()
+    if mapping is None:
+        mapping = Mapping()
+
+    preprocessor = MsgPreprocessor()
+    chunks = preprocessor.extract(path)
+    sequential_counters: dict[EntityType, int] | None = {} if sequential_tokens else None
+    all_replaced: list[Span] = []
+    for chunk in chunks:
+        result = _pseudonymize_chunk(
+            chunk.text,
+            master,
+            detectors,
+            mapping=mapping,
+            sequential_tokens=sequential_tokens,
+            sequential_counters=sequential_counters,
+        )
+        chunk.text = result.text
+        all_replaced.extend(result.replaced)
+    rebuilt = preprocessor.reassemble(path, chunks)
     return PseudonymizeResult(text=rebuilt, mapping=mapping, replaced=all_replaced)
 
 

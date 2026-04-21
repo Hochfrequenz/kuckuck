@@ -13,7 +13,13 @@ See the module-level docstrings for implementation notes.
 
 from kuckuck.config import DEFAULT_KEY_PATH, KuckuckSettings, load_default_key, load_key
 from kuckuck.mapping import Mapping, load_mapping, save_mapping
-from kuckuck.pseudonymize import PseudonymizeResult, build_default_detectors, pseudonymize_text, restore_text
+from kuckuck.pseudonymize import (
+    PseudonymizeResult,
+    build_default_detectors,
+    pseudonymize_msg_file,
+    pseudonymize_text,
+    restore_text,
+)
 
 __all__ = [
     "DEFAULT_KEY_PATH",
@@ -24,6 +30,7 @@ __all__ = [
     "load_default_key",
     "load_key",
     "load_mapping",
+    "pseudonymize_msg_file",
     "pseudonymize_text",
     "restore_text",
     "save_mapping",
