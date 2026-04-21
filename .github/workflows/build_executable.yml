@@ -1,0 +1,123 @@
+name: "Build Executable"
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  release:
+    types: [created]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            tox_env: build_executable
+            artifact: kuckuck_windows
+            binary: kuckuck_windows.exe
+          - os: macos-latest
+            tox_env: build_executable_macos
+            artifact: kuckuck_macos_arm64
+            binary: kuckuck_macos_arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Build Executable
+        run: |
+          python -m pip install --upgrade pip
+          pip install tox
+          tox -e ${{ matrix.tox_env }}
+      - name: Freeze build dependencies
+        run: tox exec -e ${{ matrix.tox_env }} -- pip freeze > dist/build-dependencies.txt
+        shell: bash
+      - name: Upload Executable as Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/${{ matrix.binary }}
+            dist/build-dependencies.txt
+
+  smoke_test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: kuckuck_windows
+            binary: kuckuck_windows.exe
+          - os: macos-latest
+            artifact: kuckuck_macos_arm64
+            binary: kuckuck_macos_arm64
+    runs-on: ${{ matrix.os }}
+    name: "Smoke Test (${{ matrix.os }})"
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Download Executable
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+      # actions/upload-artifact zips contents and the zip format does not
+      # reliably preserve Unix mode bits on download — restore +x.
+      - name: Make binary executable (macOS)
+        if: matrix.os == 'macos-latest'
+        run: chmod +x dist/${{ matrix.binary }}
+        shell: bash
+      - name: Smoke Test
+        run: python unittests/smoke_test_exe.py dist/${{ matrix.binary }}
+
+  release:
+    needs: [build, smoke_test]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows Executable
+        uses: actions/download-artifact@v8
+        with:
+          name: kuckuck_windows
+          path: dist/windows
+        continue-on-error: true
+      - name: Download macOS Executable
+        uses: actions/download-artifact@v8
+        with:
+          name: kuckuck_macos_arm64
+          path: dist/macos
+        continue-on-error: true
+      - name: Rename Executables with version
+        run: |
+          set -eu
+          mkdir -p dist/release
+          if [ -f ./dist/windows/kuckuck_windows.exe ]; then
+            mv ./dist/windows/kuckuck_windows.exe \
+              ./dist/release/kuckuck_windows_${{ github.ref_name }}.exe
+          else
+            echo "::warning::Windows artifact missing; skipping"
+          fi
+          if [ -f ./dist/macos/kuckuck_macos_arm64 ]; then
+            mv ./dist/macos/kuckuck_macos_arm64 \
+              ./dist/release/kuckuck_macos_arm64_${{ github.ref_name }}
+          else
+            echo "::warning::macOS arm64 artifact missing; skipping"
+          fi
+          ls -la dist/release/
+      - name: Upload Executable to Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            ./dist/release/kuckuck_windows_${{ github.ref_name }}.exe
+            ./dist/release/kuckuck_macos_arm64_${{ github.ref_name }}
+          fail_on_unmatched_files: false

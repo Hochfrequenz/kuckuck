@@ -1,0 +1,15 @@
+# serializer version: 1
+# name: TestSnapshot.test_email_output_snapshot
+  'Kontakt: [[EMAIL_9f4b5081]]'
+# ---
+# name: TestSnapshot.test_mixed_entities_snapshot
+  '''
+  Sehr geehrte Damen und Herren,
+  bitte wenden Sie sich an [[EMAIL_9f4b5081]] oder [[PHONE_66fd7fd5]].
+  Bei Rückfragen cc [[HANDLE_0da61607]] oder [[HANDLE_7265f538]].
+  Mit freundlichen Grüßen
+  '''
+# ---
+# name: TestSnapshot.test_with_denylist
+  'Unser Kunde [[TERM_5cd3e8f0]] hat einen Bug gemeldet bei [[EMAIL_842ef308]]'
+# ---

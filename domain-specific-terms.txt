@@ -1,1 +1,14 @@
-# contains 1 lower case word per line which are ignored in the spell_check
+# Lowercase words that codespell should ignore when scanning src/ and unittests/.
+# Code comments and docstrings are written in English; German prose lives in
+# the README (not scanned) and in CLI help strings (scanned, hence some
+# German entries here).
+kuckuck
+hochfrequenz
+dsgvo
+denylist
+allowlist
+# German CLI help strings and user-facing messages:
+lokale
+vor
+personenbezogener
+cloud

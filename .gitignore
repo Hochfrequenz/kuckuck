@@ -133,4 +133,10 @@ dmypy.json
 # vscode settings
 .vscode/
 
-src/_your_package_version.py
+src/_kuckuck_version.py
+
+# Kuckuck artifacts (never commit)
+.kuckuck-key
+*.kuckuck-map.enc
+*.pseudonymized.*
+kuckuck-log.jsonl
