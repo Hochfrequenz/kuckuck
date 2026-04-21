@@ -26,6 +26,7 @@ positions in the token stream.
 from __future__ import annotations
 
 import re
+import secrets
 
 from markdown_it import MarkdownIt
 
@@ -40,9 +41,13 @@ _SKIP_BLOCK_TYPES = frozenset(
 )
 
 _INLINE_CODE_RE = re.compile(r"`+[^`\n]+?`+")
-_SENTINEL_PREFIX = "KUCKUCKINLINECODE"
-_SENTINEL_SUFFIX = "ENDCODE"
-_SENTINEL_RE = re.compile(rf"{_SENTINEL_PREFIX}(\d+){_SENTINEL_SUFFIX}")
+#: Sentinel format. The ``{salt}`` placeholder is replaced with a fresh
+#: random hex string per document so a literal "KUCKUCKINLINECODE0..."
+#: in user prose cannot collide with the masking step. The salt makes
+#: collisions astronomically unlikely (16^16 ~ 1.8e19 possibilities).
+_SENTINEL_BASE = "KUCKUCKINLINECODE_{salt}_"
+_SENTINEL_END = "_ENDCODE"
+_SENTINEL_SALT_BYTES = 8
 
 _YAML_FRONTMATTER_DELIM = "---"
 
@@ -61,17 +66,21 @@ class MarkdownPreprocessor:
             return []
         lines = source.splitlines(keepends=True)
         skip_lines = _compute_skip_lines(self._md, source, lines)
+        # Per-document salt prevents the inline-code sentinel from
+        # colliding with literal user prose that happens to contain the
+        # static prefix.
+        salt = secrets.token_hex(_SENTINEL_SALT_BYTES)
         chunks: list[Chunk] = []
         run_start: int | None = None
         for idx in range(len(lines)):
             if idx in skip_lines:
                 if run_start is not None:
-                    chunks.append(_make_chunk(lines, run_start, idx))
+                    chunks.append(_make_chunk(lines, run_start, idx, salt))
                     run_start = None
             elif run_start is None:
                 run_start = idx
         if run_start is not None:
-            chunks.append(_make_chunk(lines, run_start, len(lines)))
+            chunks.append(_make_chunk(lines, run_start, len(lines), salt))
         return chunks
 
     def reassemble(self, source: str, modified: list[Chunk]) -> str:
@@ -81,10 +90,10 @@ class MarkdownPreprocessor:
         lines = source.splitlines(keepends=True)
         by_start: dict[int, tuple[int, str]] = {}
         for chunk in modified:
-            if not isinstance(chunk.locator, tuple) or len(chunk.locator) != 3:
+            if not isinstance(chunk.locator, tuple) or len(chunk.locator) != 4:
                 raise ValueError(f"Invalid markdown chunk locator: {chunk.locator!r}")
-            start, end, mask_table = chunk.locator
-            by_start[start] = (end, _unmask_inline_code(chunk.text, mask_table))
+            start, end, salt, mask_table = chunk.locator
+            by_start[start] = (end, _unmask_inline_code(chunk.text, salt, mask_table))
 
         out: list[str] = []
         idx = 0
@@ -100,33 +109,36 @@ class MarkdownPreprocessor:
         return "".join(out)
 
 
-def _make_chunk(lines: list[str], start: int, end: int) -> Chunk:
+def _make_chunk(lines: list[str], start: int, end: int, salt: str) -> Chunk:
     """Build a chunk for ``lines[start:end]`` with inline-code masked."""
     raw = "".join(lines[start:end])
-    masked, mask_table = _mask_inline_code(raw)
-    return Chunk(text=masked, locator=(start, end, mask_table))
+    masked, mask_table = _mask_inline_code(raw, salt)
+    return Chunk(text=masked, locator=(start, end, salt, mask_table))
 
 
-def _mask_inline_code(text: str) -> tuple[str, dict[str, str]]:
-    """Replace every inline-code span with a sentinel; return mapping."""
+def _mask_inline_code(text: str, salt: str) -> tuple[str, dict[str, str]]:
+    """Replace every inline-code span with a salted sentinel; return mapping."""
     table: dict[str, str] = {}
+    prefix = _SENTINEL_BASE.format(salt=salt)
 
     def _sub(match: re.Match[str]) -> str:
         idx = len(table)
-        sentinel = f"{_SENTINEL_PREFIX}{idx}{_SENTINEL_SUFFIX}"
+        sentinel = f"{prefix}{idx}{_SENTINEL_END}"
         table[sentinel] = match.group(0)
         return sentinel
 
     return _INLINE_CODE_RE.sub(_sub, text), table
 
 
-def _unmask_inline_code(text: str, table: dict[str, str]) -> str:
+def _unmask_inline_code(text: str, salt: str, table: dict[str, str]) -> str:
     """Reverse :func:`_mask_inline_code`. Unknown sentinels are left as-is."""
+    prefix = _SENTINEL_BASE.format(salt=salt)
+    sentinel_re = re.compile(rf"{re.escape(prefix)}(\d+){re.escape(_SENTINEL_END)}")
 
     def _sub(match: re.Match[str]) -> str:
         return table.get(match.group(0), match.group(0))
 
-    return _SENTINEL_RE.sub(_sub, text)
+    return sentinel_re.sub(_sub, text)
 
 
 def _compute_skip_lines(md: MarkdownIt, source: str, lines: list[str]) -> set[int]:
