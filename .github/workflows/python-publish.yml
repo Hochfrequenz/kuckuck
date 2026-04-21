@@ -27,7 +27,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: ["3.13"]
+        python-version: ["3.14"]
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v6
@@ -48,7 +48,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: ["3.13"]
+        python-version: ["3.14"]
         os: [ubuntu-latest]
     # Required by PyPI trusted publishing:
     # https://docs.pypi.org/trusted-publishers/adding-a-publisher/
