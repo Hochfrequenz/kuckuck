@@ -7,9 +7,12 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr
 
+from cryptography.exceptions import InvalidTag
+
 from kuckuck.crypto import hmac_token
 from kuckuck.mapping import (
     MAGIC,
+    SCHEMA_VERSION,
     Mapping,
     MappingCorruptError,
     MappingEntry,
@@ -110,7 +113,7 @@ class TestPersistence:
         m.get_or_allocate(MASTER, original="Max Müller", entity_type="PERSON")
         target = tmp_path / "doc.enc"
         save_mapping(MASTER, m, target)
-        with pytest.raises(Exception):
+        with pytest.raises(InvalidTag):
             load_mapping(OTHER, target)
 
     def test_tampered_file_fails(self, tmp_path: Path) -> None:
@@ -122,8 +125,27 @@ class TestPersistence:
         blob = bytearray(target.read_bytes())
         blob[-1] ^= 0xFF  # flip last byte of ciphertext
         target.write_bytes(bytes(blob))
-        with pytest.raises(Exception):
+        with pytest.raises(InvalidTag):
             load_mapping(MASTER, target)
+
+    def test_unsupported_schema_version_rejected(self, tmp_path: Path) -> None:
+        m = Mapping()
+        m.get_or_allocate(MASTER, original="Max Müller", entity_type="PERSON")
+        target = tmp_path / "v99.enc"
+        save_mapping(MASTER, m, target)
+
+        blob = bytearray(target.read_bytes())
+        blob[4] = 99  # schema version byte — no longer == SCHEMA_VERSION
+        assert blob[4] != SCHEMA_VERSION
+        target.write_bytes(bytes(blob))
+        with pytest.raises(MappingCorruptError, match="schema version"):
+            load_mapping(MASTER, target)
+
+    def test_key_id_length_limit_enforced(self, tmp_path: Path) -> None:
+        m = Mapping(key_id="x" * 256)
+        target = tmp_path / "big.enc"
+        with pytest.raises(ValueError, match="255 bytes"):
+            save_mapping(MASTER, m, target)
 
     def test_non_magic_file_rejected(self, tmp_path: Path) -> None:
         target = tmp_path / "bogus.enc"

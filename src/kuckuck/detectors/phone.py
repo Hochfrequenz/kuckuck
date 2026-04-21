@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import phonenumbers
 
-from kuckuck.detectors.base import EntityType, Span
+from kuckuck.detectors.base import EntityType, Priority, Span
 
 
 class PhoneDetector:
@@ -17,7 +17,7 @@ class PhoneDetector:
 
     name = "phone"
     entity_type = EntityType.PHONE
-    priority = 90
+    priority = Priority.PHONE
 
     def __init__(self, default_region: str = "DE") -> None:
         self.default_region = default_region

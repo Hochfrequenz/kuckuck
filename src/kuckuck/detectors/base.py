@@ -24,6 +24,20 @@ class EntityType(StrEnum):
     DENYLIST = "DENYLIST"
 
 
+class Priority:
+    """Default resolver priorities.
+
+    Higher = wins ties in :func:`resolve_spans`. Grouped here so individual
+    detectors don't re-invent the ranking every time they're added.
+    """
+
+    EMAIL = 100
+    PHONE = 90
+    HANDLE = 80
+    DENYLIST = 70
+    PERSON = 10  # NER detector — lowest priority, yields to regex matches on the same span.
+
+
 class Span(BaseModel):
     """An inclusive/exclusive character span matched by a detector.
 

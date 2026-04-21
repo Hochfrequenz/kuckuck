@@ -24,9 +24,11 @@ import sys
 from pathlib import Path
 
 import typer
+from cryptography.exceptions import InvalidTag
+from pydantic import SecretStr
 
 from kuckuck.config import DEFAULT_KEY_PATH, PROJECT_KEY_NAME, KeyNotFoundError, init_key, load_key
-from kuckuck.mapping import Mapping, load_mapping, save_mapping
+from kuckuck.mapping import Mapping, MappingCorruptError, load_mapping, save_mapping
 from kuckuck.pseudonymize import build_default_detectors, pseudonymize_text, restore_text
 
 app = typer.Typer(
@@ -40,10 +42,28 @@ _SUBCOMMANDS = frozenset({"init-key", "restore", "inspect", "list-detectors", "v
 
 #: Return codes used across the CLI. Stable so shell scripts can dispatch on them.
 EXIT_OK = 0
+EXIT_GENERIC = 1
 EXIT_USAGE = 2
 EXIT_KEY_NOT_FOUND = 3
 EXIT_MAPPING_MISSING = 4
-EXIT_GENERIC = 1
+EXIT_MAPPING_CORRUPT = 5
+EXIT_MAPPING_WRONG_KEY = 6
+
+
+def _load_mapping_or_exit(master: SecretStr, path: Path) -> Mapping:
+    """Wrapper around :func:`load_mapping` that turns crypto errors into friendly CLI output."""
+    try:
+        return load_mapping(master, path)
+    except MappingCorruptError as exc:
+        typer.echo(f"Mapping file is corrupt: {path} ({exc})", err=True)
+        raise typer.Exit(EXIT_MAPPING_CORRUPT) from exc
+    except InvalidTag as exc:
+        typer.echo(
+            f"Could not decrypt mapping: {path}\n"
+            f"The key does not match the one used to create this mapping.",
+            err=True,
+        )
+        raise typer.Exit(EXIT_MAPPING_WRONG_KEY) from exc
 
 
 def _sidecar_path(file_path: Path) -> Path:
@@ -78,7 +98,10 @@ def cmd_init_key(
     try:
         written = init_key(target, overwrite=force)
     except FileExistsError as exc:
-        typer.echo(str(exc), err=True)
+        typer.echo(
+            f"Key file already exists: {target}\nUse --force to overwrite it.",
+            err=True,
+        )
         raise typer.Exit(EXIT_USAGE) from exc
     typer.echo(f"Wrote new key to {written}")
 
@@ -124,7 +147,7 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     for path in paths:
         target_text = output_dir / path.name if output_dir is not None else path
         target_map = _sidecar_path(target_text)
-        mapping = load_mapping(master, target_map) if target_map.is_file() else Mapping()
+        mapping = _load_mapping_or_exit(master, target_map) if target_map.is_file() else Mapping()
         text = path.read_text(encoding="utf-8")
         result = pseudonymize_text(text, master, detectors, mapping=mapping, sequential_tokens=sequential_tokens)
         if dry_run:
@@ -139,9 +162,18 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
 @app.command("restore")
 def cmd_restore(
     paths: list[Path] = typer.Argument(..., exists=True, help="Pseudonymized files to restore in place."),
-    key_file: Path | None = typer.Option(None, "--key-file", "-k"),
-    output_dir: Path | None = typer.Option(None, "--output-dir", "-o"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n"),
+    key_file: Path | None = typer.Option(
+        None, "--key-file", "-k", help="Override key lookup."
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        "-o",
+        help="Write restored output to this directory instead of overwriting in place.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Print the restored text instead of writing it."
+    ),
 ) -> None:
     """Restore original values into pseudonymized files using the sidecar mapping."""
     try:
@@ -158,7 +190,7 @@ def cmd_restore(
         if not target_map.is_file():
             typer.echo(f"Missing mapping: {target_map}", err=True)
             raise typer.Exit(EXIT_MAPPING_MISSING)
-        mapping = load_mapping(master, target_map)
+        mapping = _load_mapping_or_exit(master, target_map)
         text = path.read_text(encoding="utf-8")
         restored = restore_text(text, mapping)
         if dry_run:
@@ -172,7 +204,7 @@ def cmd_restore(
 @app.command("inspect")
 def cmd_inspect(
     mapping_file: Path = typer.Argument(..., exists=True, help="Encrypted mapping (.kuckuck-map.enc)."),
-    key_file: Path | None = typer.Option(None, "--key-file", "-k"),
+    key_file: Path | None = typer.Option(None, "--key-file", "-k", help="Override key lookup."),
 ) -> None:
     """Print a decrypted mapping for debugging. Handle with care — prints cleartext!"""
     try:
@@ -180,7 +212,7 @@ def cmd_inspect(
     except KeyNotFoundError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(EXIT_KEY_NOT_FOUND) from exc
-    mapping = load_mapping(master, mapping_file)
+    mapping = _load_mapping_or_exit(master, mapping_file)
     typer.echo(f"key_id: {mapping.key_id or '(none)'}")
     typer.echo(f"entries: {len(mapping)}")
     for token, entry in sorted(mapping.entries.items()):

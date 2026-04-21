@@ -13,7 +13,7 @@ import re
 
 from email_validator import EmailNotValidError, validate_email
 
-from kuckuck.detectors.base import EntityType, Span
+from kuckuck.detectors.base import EntityType, Priority, Span
 
 #: Greedy candidate pattern — anything that looks roughly ``local@domain.tld``.
 #: Validation is delegated to :func:`email_validator.validate_email`.
@@ -27,7 +27,7 @@ class EmailDetector:
 
     name = "email"
     entity_type = EntityType.EMAIL
-    priority = 100
+    priority = Priority.EMAIL
 
     def detect(self, text: str) -> list[Span]:
         """Return every email address found in *text*."""

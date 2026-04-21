@@ -80,13 +80,35 @@ def _allocate_token(
     span: Span,
     sequential_counters: dict[EntityType, int] | None,
 ) -> str:
-    """Return the token suffix for *span*; updates *mapping* and counters."""
+    """Return the token suffix for *span*; updates *mapping* and counters.
+
+    Sequential-mode callers pass a dict that is populated on first use from
+    the highest existing numeric token in *mapping* per entity type. This
+    prevents two calls that share a mapping from silently overwriting each
+    other's allocations.
+    """
     if sequential_counters is None:
         return mapping.get_or_allocate(master, original=span.text, entity_type=span.entity_type.value)
-    counter = sequential_counters.get(span.entity_type, 0) + 1
-    sequential_counters[span.entity_type] = counter
-    token = str(counter)
-    mapping.entries[token] = MappingEntry(original=span.text, entity_type=span.entity_type.value)
+
+    entity_type_str = span.entity_type.value
+    normalized = span.text
+    # Reverse lookup — reuse an existing sequential token for the same value
+    # so a shared mapping stays consistent across sequential-mode calls.
+    for token, entry in mapping.entries.items():
+        if token.isdigit() and entry.entity_type == entity_type_str and entry.original == normalized:
+            return token
+
+    if span.entity_type not in sequential_counters:
+        existing = [
+            int(tok)
+            for tok, entry in mapping.entries.items()
+            if tok.isdigit() and entry.entity_type == entity_type_str
+        ]
+        sequential_counters[span.entity_type] = max(existing, default=0)
+
+    sequential_counters[span.entity_type] += 1
+    token = str(sequential_counters[span.entity_type])
+    mapping.entries[token] = MappingEntry(original=normalized, entity_type=entity_type_str)
     return token
 
 

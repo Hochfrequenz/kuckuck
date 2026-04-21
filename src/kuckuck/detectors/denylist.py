@@ -1,5 +1,14 @@
 """Denylist detector — forces literal strings to always be pseudonymized.
 
+Matching is **case-sensitive substring** against the input text: an entry
+``"Alpha"`` matches inside ``"Alphabet"``. Use longer, more specific entries
+(``"Alpha GmbH"``, ``"Kunde Alpha"``) to avoid unintended matches.
+
+Both entries and the scanned text are normalized to Unicode NFC before
+matching so macOS-NFD and Windows-NFC inputs of the same visual string
+match consistently — the same invariant the HMAC side of the pipeline
+guarantees.
+
 For small lists (≤ ``AHOCORASICK_THRESHOLD`` entries) the detector scans with a
 pre-compiled alternation regex. Once the list grows past the threshold, it
 falls back to :mod:`pyahocorasick`, which scales linearly in the input size
@@ -13,7 +22,8 @@ from typing import Iterable
 
 import ahocorasick  # type: ignore[import-not-found]
 
-from kuckuck.detectors.base import EntityType, Span
+from kuckuck.crypto import normalize
+from kuckuck.detectors.base import EntityType, Priority, Span
 
 #: Switch-over point between regex alternation and Aho–Corasick.
 AHOCORASICK_THRESHOLD = 1000
@@ -29,10 +39,10 @@ class DenylistDetector:
 
     name = "denylist"
     entity_type = EntityType.DENYLIST
-    priority = 70
+    priority = Priority.DENYLIST
 
     def __init__(self, entries: Iterable[str]) -> None:
-        clean = sorted({e for e in entries if e}, key=len, reverse=True)
+        clean = sorted({normalize(e) for e in entries if e}, key=len, reverse=True)
         self._entries: tuple[str, ...] = tuple(clean)
         self._automaton: ahocorasick.Automaton | None = None
         self._regex: re.Pattern[str] | None = None
@@ -56,14 +66,15 @@ class DenylistDetector:
         """Return every denylist match found in *text*."""
         if not self._entries:
             return []
+        normalized_text = normalize(text)
         spans: list[Span] = []
         if self._automaton is not None:
-            for end_index, value in self._automaton.iter(text):
+            for end_index, value in self._automaton.iter(normalized_text):
                 start = end_index - len(value) + 1
                 spans.append(self._make_span(start, start + len(value), value))
         else:
             assert self._regex is not None
-            for match in self._regex.finditer(text):
+            for match in self._regex.finditer(normalized_text):
                 spans.append(self._make_span(match.start(), match.end(), match.group(0)))
         return spans
 

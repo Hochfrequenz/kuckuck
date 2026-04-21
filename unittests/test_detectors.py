@@ -100,6 +100,24 @@ class TestHandleDetector:
     def test_css_media_not_captured(self) -> None:
         assert self.det.detect("@media (min-width: 600px)") == []
 
+    def test_uppercase_mention_is_captured(self) -> None:
+        # Jira/Confluence allow uppercase-start handles.
+        spans = self.det.detect("cc @Alice.Smith übernimmt")
+        assert len(spans) == 1
+        assert spans[0].text == "@Alice.Smith"
+
+    def test_uppercase_account_id_is_captured(self) -> None:
+        spans = self.det.detect("[~accountid:557058:F58131CB-1234]")
+        assert len(spans) == 1
+
+    def test_numeric_first_char_not_captured(self) -> None:
+        # 123abc would match \w but we require a leading letter to avoid
+        # bare @-numbers (@1234 from time stamps, @v1 from version refs).
+        assert self.det.detect("@123abc") == []
+
+    def test_empty_input(self) -> None:
+        assert self.det.detect("") == []
+
 
 class TestDenylistDetector:
     def test_empty_list_detects_nothing(self) -> None:
@@ -140,6 +158,29 @@ class TestDenylistDetector:
     def test_dropping_empty_entries(self) -> None:
         det = DenylistDetector(["", "Beta"])
         assert det.entries == ("Beta",)
+
+    def test_nfc_normalization_of_entries(self) -> None:
+        # NFD input to the detector — normalized to NFC internally.
+        decomposed = "Müller GmbH"  # NFD form of "Müller GmbH"
+        det = DenylistDetector([decomposed])
+        assert det.entries == ("Müller GmbH",)  # stored as NFC
+
+    def test_nfc_normalization_of_input_text(self) -> None:
+        det = DenylistDetector(["Müller GmbH"])
+        nfd_text = "Kunde Müller GmbH hat gemeldet."
+        spans = det.detect(nfd_text)
+        assert len(spans) == 1
+        assert spans[0].text == "Müller GmbH"
+
+    def test_aho_corasick_branch_with_many_entries(self) -> None:
+        # Generate > AHOCORASICK_THRESHOLD entries so the Aho-Corasick
+        # automaton code path is exercised (instead of the regex path).
+        entries = [f"Kunde_{i:05d}_GmbH" for i in range(1100)]
+        assert len(entries) > 1000
+        det = DenylistDetector(entries)
+        text = "Kontakt: Kunde_00042_GmbH und Kunde_00999_GmbH."
+        found = sorted(s.text for s in det.detect(text))
+        assert found == ["Kunde_00042_GmbH", "Kunde_00999_GmbH"]
 
 
 class TestResolveSpans:

@@ -51,6 +51,9 @@ class TestInitKey:
         result = runner.invoke(app, ["init-key", "--key-file", str(target)])
         assert result.exit_code != 0
         assert "exists" in result.output.lower()
+        # Must reference the CLI flag, not the Python API kwarg.
+        assert "--force" in result.output
+        assert "overwrite=true" not in result.output.lower()
 
     def test_init_key_force(self, tmp_path: Path) -> None:
         target = tmp_path / "k"
@@ -180,6 +183,61 @@ class TestRestore:
         source.write_text("pseudonymized output", encoding="utf-8")
         result = runner.invoke(app, ["restore", str(source), "--key-file", str(key_file)])
         assert result.exit_code == 4  # EXIT_MAPPING_MISSING
+
+    def test_restore_missing_key_exit_code(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KUCKUCK_KEY_FILE", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        source = tmp_path / "doc.txt"
+        source.write_text("[[EMAIL_xxx]]", encoding="utf-8")
+        (tmp_path / "doc.txt.kuckuck-map.enc").write_bytes(b"dummy")
+
+        result = runner.invoke(app, ["restore", str(source)])
+        assert result.exit_code == 3  # EXIT_KEY_NOT_FOUND
+
+    def test_restore_corrupt_mapping(self, tmp_path: Path, key_file: Path) -> None:
+        source = tmp_path / "doc.txt"
+        source.write_text("pseudo", encoding="utf-8")
+        map_path = tmp_path / "doc.txt.kuckuck-map.enc"
+        map_path.write_bytes(b"garbage that is not a kuckuck map file at all")
+        result = runner.invoke(app, ["restore", str(source), "--key-file", str(key_file)])
+        assert result.exit_code == 5  # EXIT_MAPPING_CORRUPT
+        assert "corrupt" in result.output.lower()
+
+    def test_restore_with_wrong_key(self, tmp_path: Path, key_file: Path) -> None:
+        # Build a valid mapping with one key, try to restore with a different key
+        source = tmp_path / "doc.txt"
+        source.write_text("Kontakt max@firma.de", encoding="utf-8")
+        _invoke([str(source), "--key-file", str(key_file)])
+
+        other_key = tmp_path / "other.key"
+        other_key.write_text("ff" * 32, encoding="utf-8")
+        result = runner.invoke(app, ["restore", str(source), "--key-file", str(other_key)])
+        assert result.exit_code == 6  # EXIT_MAPPING_WRONG_KEY
+        assert "key does not match" in result.output.lower()
+
+
+class TestInspectErrorPaths:
+    def test_inspect_missing_key_exit_code(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        map_path = tmp_path / "bogus.enc"
+        map_path.write_bytes(b"dummy")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KUCKUCK_KEY_FILE", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        result = runner.invoke(app, ["inspect", str(map_path)])
+        assert result.exit_code == 3
+
+    def test_inspect_corrupt_mapping(self, tmp_path: Path, key_file: Path) -> None:
+        map_path = tmp_path / "bogus.enc"
+        map_path.write_bytes(b"not a kuckuck mapping")
+        result = runner.invoke(app, ["inspect", str(map_path), "--key-file", str(key_file)])
+        assert result.exit_code == 5
 
 
 class TestInspect:

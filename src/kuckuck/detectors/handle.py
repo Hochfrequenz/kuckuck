@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import re
 
-from kuckuck.detectors.base import EntityType, Span
+from kuckuck.detectors.base import EntityType, Priority, Span
 
-#: ``@user.name`` style — lowercase first char, at least 3 chars total.
-_MENTION_RE = re.compile(r"(?<![\w.@/])@([a-z][\w.\-]{2,})")
+#: ``@User.Name`` style — at least 3 chars total, starting with a letter so
+#: numeric IDs or scope prefixes (``@types/node``) don't trigger the detector.
+_MENTION_RE = re.compile(r"(?<![\w.@/])@([A-Za-z][\w.\-]{2,})")
 
-#: ``[~accountid:xyz]`` style.
-_ACCOUNT_RE = re.compile(r"\[~accountid:[a-f0-9:\-]+\]")
+#: ``[~accountid:xyz]`` style. Jira Cloud uses mixed-case account IDs.
+_ACCOUNT_RE = re.compile(r"\[~accountid:[A-Fa-f0-9:\-]+\]")
 
 #: ``[~username]`` style (Jira Server).
 _SHORT_RE = re.compile(r"\[~[\w.\-]+\]")
@@ -96,7 +97,7 @@ class HandleDetector:
 
     name = "handle"
     entity_type = EntityType.HANDLE
-    priority = 80
+    priority = Priority.HANDLE
 
     def detect(self, text: str) -> list[Span]:
         """Return every Jira/Confluence user handle found in *text*."""

@@ -5,9 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr
 
+from cryptography.exceptions import InvalidTag
+
 from kuckuck.crypto import (
     AES_NONCE_BYTES,
     HMAC_HEX_LENGTH,
+    _master_bytes,
     decrypt_mapping_payload,
     derive_hmac_key,
     derive_map_key,
@@ -96,7 +99,7 @@ class TestMappingEncryption:
     def test_decrypt_with_wrong_master_fails(self) -> None:
         plaintext = b"secret"
         nonce, ct = encrypt_mapping_payload(MASTER_HEX, plaintext)
-        with pytest.raises(Exception):  # InvalidTag from cryptography
+        with pytest.raises(InvalidTag):
             decrypt_mapping_payload(OTHER_MASTER, nonce, ct)
 
     def test_each_encryption_uses_fresh_nonce(self) -> None:
@@ -110,5 +113,44 @@ class TestMappingEncryption:
         plaintext = b"secret"
         nonce, ct = encrypt_mapping_payload(MASTER_HEX, plaintext)
         tampered = bytes([ct[0] ^ 0xFF]) + ct[1:]
-        with pytest.raises(Exception):
+        with pytest.raises(InvalidTag):
             decrypt_mapping_payload(MASTER_HEX, nonce, tampered)
+
+
+class TestMasterBytesHexStrictness:
+    """Guards the :func:`_master_bytes` hex-interpretation rule.
+
+    See the module docstring: hex is accepted **only** for 64-char, all-hex
+    strings. A previous loose rule silently interpreted short strings like
+    ``"abc123"`` as 3 bytes of hex, making typo-induced key drift
+    undetectable.
+    """
+
+    def test_full_length_hex_is_decoded(self) -> None:
+        hex_str = "00" * 32
+        assert _master_bytes(SecretStr(hex_str)) == b"\x00" * 32
+
+    def test_full_length_mixed_case_hex_is_decoded(self) -> None:
+        hex_str = "aA" * 32
+        assert len(_master_bytes(SecretStr(hex_str))) == 32
+
+    def test_short_hexlike_is_treated_as_utf8(self) -> None:
+        # "abc123" could be 3 bytes of hex, but we now require full length.
+        assert _master_bytes(SecretStr("abc123")) == b"abc123"
+
+    def test_non_hex_chars_fall_back_to_utf8(self) -> None:
+        # A 64-char non-hex passphrase is still a passphrase, not hex.
+        passphrase = "x" * 64
+        assert _master_bytes(SecretStr(passphrase)) == passphrase.encode("utf-8")
+
+    def test_trailing_whitespace_is_stripped(self) -> None:
+        hex_str = "00" * 32
+        assert _master_bytes(SecretStr(hex_str + "\n")) == b"\x00" * 32
+
+    def test_typo_does_not_silently_share_prefix_with_original(self) -> None:
+        # 'abc12' vs 'abc123' previously produced unrelated bytes silently;
+        # now both are UTF-8 and the difference is obvious.
+        a = _master_bytes(SecretStr("abc12"))
+        b = _master_bytes(SecretStr("abc123"))
+        assert a == b"abc12"
+        assert b == b"abc123"
