@@ -63,9 +63,7 @@ app = typer.Typer(
 )
 
 #: Names of explicit subcommands — kept in sync with the ``@app.command`` registrations.
-_SUBCOMMANDS = frozenset(
-    {"init-key", "restore", "inspect", "list-detectors", "version", "run", "fetch-model"}
-)
+_SUBCOMMANDS = frozenset({"init-key", "restore", "inspect", "list-detectors", "version", "run", "fetch-model"})
 
 #: Return codes used across the CLI. Stable so shell scripts can dispatch on them.
 EXIT_OK = 0
@@ -439,8 +437,7 @@ def cmd_fetch_model(
         from huggingface_hub import snapshot_download  # type: ignore[import-not-found]
     except ImportError as exc:
         typer.echo(
-            "Cannot fetch model: huggingface_hub is missing. "
-            "Reinstall 'kuckuck[ner]' to repair the install.",
+            "Cannot fetch model: huggingface_hub is missing. Reinstall 'kuckuck[ner]' to repair the install.",
             err=True,
         )
         raise typer.Exit(EXIT_MODEL_MISSING) from exc

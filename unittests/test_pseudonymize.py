@@ -30,26 +30,20 @@ class TestBuildDefaultDetectors:
         names = {d.name for d in build_default_detectors(denylist=[])}
         assert "denylist" not in names
 
-    def test_use_ner_skipped_silently_when_gliner_missing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_use_ner_skipped_silently_when_gliner_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Library API: missing gliner must NOT raise — caller stays robust.
         monkeypatch.setattr("kuckuck.pseudonymize.is_gliner_installed", lambda: False)
         names = {d.name for d in build_default_detectors(use_ner=True)}
         assert "ner" not in names
         assert "email" in names
 
-    def test_use_ner_skipped_silently_when_model_missing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_use_ner_skipped_silently_when_model_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("kuckuck.pseudonymize.is_gliner_installed", lambda: True)
         monkeypatch.setattr("kuckuck.pseudonymize.is_model_available", lambda: False)
         names = {d.name for d in build_default_detectors(use_ner=True)}
         assert "ner" not in names
 
-    def test_use_ner_appends_detector_when_available(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_use_ner_appends_detector_when_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("kuckuck.pseudonymize.is_gliner_installed", lambda: True)
         monkeypatch.setattr("kuckuck.pseudonymize.is_model_available", lambda: True)
         # NerDetector() construction itself doesn't load the model (lazy),

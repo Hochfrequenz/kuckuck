@@ -414,17 +414,13 @@ class TestNerFlag:
 
 
 class TestFetchModel:
-    def test_fetch_without_gliner_exits_model_missing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_fetch_without_gliner_exits_model_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: False)
         result = runner.invoke(app, ["fetch-model"])
         assert result.exit_code == 7
         assert "kuckuck[ner]" in result.output
 
-    def test_fetch_skips_when_already_present(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_fetch_skips_when_already_present(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
         target_root = tmp_path / "cache"
         # Pre-create a populated model dir for the default model id slug.
@@ -436,9 +432,7 @@ class TestFetchModel:
         assert result.exit_code == 0
         assert "already present" in result.output
 
-    def test_fetch_invokes_snapshot_download(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_fetch_invokes_snapshot_download(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
         calls: list[dict[str, str]] = []
 
@@ -462,9 +456,7 @@ class TestFetchModel:
         assert calls and calls[0]["repo_id"] == "urchade/gliner_multi-v2.1"
         assert "Done" in result.output
 
-    def test_fetch_force_redownloads(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_fetch_force_redownloads(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
         target_root = tmp_path / "cache"
         model_dir = target_root / "gliner_multi-v2.1"
@@ -473,9 +465,7 @@ class TestFetchModel:
 
         called = {"n": 0}
 
-        def fake_snapshot_download(  # pylint: disable=unused-argument
-            repo_id: str, local_dir: str
-        ) -> str:
+        def fake_snapshot_download(repo_id: str, local_dir: str) -> str:  # pylint: disable=unused-argument
             called["n"] += 1
             return local_dir
 
@@ -486,9 +476,7 @@ class TestFetchModel:
         fake_mod.snapshot_download = fake_snapshot_download  # type: ignore[attr-defined]
         monkeypatch.setitem(_sys.modules, "huggingface_hub", fake_mod)
 
-        result = runner.invoke(
-            app, ["fetch-model", "--cache-dir", str(target_root), "--force"]
-        )
+        result = runner.invoke(app, ["fetch-model", "--cache-dir", str(target_root), "--force"])
         assert result.exit_code == 0
         assert called["n"] == 1
 

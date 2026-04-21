@@ -47,9 +47,7 @@ class _FakeModel:
         self.predictions = predictions or []
         self.calls: list[dict[str, Any]] = []
 
-    def predict_entities(
-        self, text: str, labels: list[str], threshold: float
-    ) -> list[dict[str, Any]]:
+    def predict_entities(self, text: str, labels: list[str], threshold: float) -> list[dict[str, Any]]:
         self.calls.append({"text": text, "labels": labels, "threshold": threshold})
         return self.predictions
 
@@ -143,18 +141,14 @@ class TestModelDiscovery:
 
 
 class TestErrorPaths:
-    def test_load_raises_when_gliner_missing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_load_raises_when_gliner_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # Pretend gliner isn't installed even if it is locally.
         monkeypatch.setattr("kuckuck.detectors.ner.is_gliner_installed", lambda: False)
         det = NerDetector(model_path=tmp_path / "no-model")
         with pytest.raises(NerNotInstalledError):
             det.detect("text")
 
-    def test_load_raises_when_model_dir_missing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_load_raises_when_model_dir_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # gliner installed (faked), but no model on disk.
         monkeypatch.setattr("kuckuck.detectors.ner.is_gliner_installed", lambda: True)
         det = NerDetector(model_path=tmp_path / "no-model")
@@ -165,9 +159,7 @@ class TestErrorPaths:
         # The function must return a bool, never raise.
         assert isinstance(is_gliner_installed(), bool)
 
-    def test_load_uses_injected_model_without_import(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_load_uses_injected_model_without_import(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Even with gliner missing, an injected model bypasses the import.
         monkeypatch.setattr("kuckuck.detectors.ner.is_gliner_installed", lambda: False)
         det = NerDetector(model=_FakeModel([{"start": 0, "end": 4, "label": "person", "score": 0.9}]))
@@ -176,9 +168,7 @@ class TestErrorPaths:
 
 
 class TestGlinerImportPath:
-    def test_load_imports_gliner_when_present(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_load_imports_gliner_when_present(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # Build a fake 'gliner' module and inject it into sys.modules so
         # the detector's lazy import resolves without pulling in real torch.
         fake_module = types.ModuleType("gliner")
@@ -246,17 +236,15 @@ class TestRealModel:
             "Thomas",
         ],
     )
-    def test_common_german_first_names_in_salutation(
-        self, detector: NerDetector, name: str
-    ) -> None:
+    def test_common_german_first_names_in_salutation(self, detector: NerDetector, name: str) -> None:
         # Salutation context is the easiest case for the model; if it fails
         # here the model is broken or the threshold is too high.
         text = f"Hallo {name}, danke für die Nachricht!"
         spans = detector.detect(text)
         person_texts = [s.text for s in spans if s.entity_type == EntityType.PERSON]
-        assert any(name in t for t in person_texts), (
-            f"GLiNER did not detect '{name}' as a person. spans={person_texts!r}"
-        )
+        assert any(
+            name in t for t in person_texts
+        ), f"GLiNER did not detect '{name}' as a person. spans={person_texts!r}"
 
     @pytest.mark.parametrize(
         "full_name",
@@ -268,9 +256,7 @@ class TestRealModel:
             "Maria von Hohenheim",
         ],
     )
-    def test_common_german_full_names_in_signature(
-        self, detector: NerDetector, full_name: str
-    ) -> None:
+    def test_common_german_full_names_in_signature(self, detector: NerDetector, full_name: str) -> None:
         text = f"Mit freundlichen Gruessen\n{full_name}\nGeschäftsführung"
         spans = detector.detect(text)
         # We allow either the full name or the surname to be flagged - GLiNER
@@ -278,9 +264,9 @@ class TestRealModel:
         # PERSON span overlaps the name fragment.
         first_token = full_name.split()[0]
         person_texts = [s.text for s in spans if s.entity_type == EntityType.PERSON]
-        assert any(first_token in t for t in person_texts), (
-            f"GLiNER did not detect '{full_name}' as a person. spans={person_texts!r}"
-        )
+        assert any(
+            first_token in t for t in person_texts
+        ), f"GLiNER did not detect '{full_name}' as a person. spans={person_texts!r}"
 
     def test_does_not_flag_abstract_prose(self, detector: NerDetector) -> None:
         # Counter-test: GLiNER is not perfect — it occasionally flags role
@@ -301,9 +287,7 @@ class TestRealModel:
 
         detectors = build_default_detectors() + [detector]
         master = SecretStr("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
-        result = pseudonymize_text(
-            "Hallo Hans, ruf mich unter +49 40 12345 zurück.", master, detectors
-        )
+        result = pseudonymize_text("Hallo Hans, ruf mich unter +49 40 12345 zurück.", master, detectors)
         assert "[[PERSON_" in result.text
         assert "Hans" not in result.text
 
@@ -329,20 +313,16 @@ class TestRealModel:
 
         # Regex pipeline cannot see plain first names — none of these become tokens.
         for name in ("Hans", "Peter", "Anna", "Maria"):
-            assert name in regex_only.text, (
-                f"regex-only baseline unexpectedly removed {name!r}"
-            )
+            assert name in regex_only.text, f"regex-only baseline unexpectedly removed {name!r}"
 
         # NER pipeline must catch the four names. We allow the model to miss
         # at most one (defensive against a single false negative on noisy
         # context) but not three of four — that would mean NER is no better
         # than baseline.
         hits = sum(1 for name in ("Hans", "Peter", "Anna", "Maria") if name not in with_ner.text)
-        assert hits >= 3, (
-            f"NER detected only {hits}/4 expected names. with_ner={with_ner.text!r}"
-        )
+        assert hits >= 3, f"NER detected only {hits}/4 expected names. with_ner={with_ner.text!r}"
 
         # And concretely: NER produced more PERSON tokens than baseline.
-        assert with_ner.text.count("[[PERSON_") > regex_only.text.count("[[PERSON_"), (
-            f"NER did not add PERSON tokens: regex={regex_only.text!r} ner={with_ner.text!r}"
-        )
+        assert with_ner.text.count("[[PERSON_") > regex_only.text.count(
+            "[[PERSON_"
+        ), f"NER did not add PERSON tokens: regex={regex_only.text!r} ner={with_ner.text!r}"

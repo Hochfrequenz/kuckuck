@@ -126,13 +126,11 @@ class NerDetector:
             return self._model
         if not is_gliner_installed():
             raise NerNotInstalledError(
-                "The optional 'gliner' package is not installed. "
-                "Install it via: pip install 'kuckuck[ner]'"
+                "The optional 'gliner' package is not installed. Install it via: pip install 'kuckuck[ner]'"
             )
         if not is_model_available(self._model_path):
             raise NerModelMissingError(
-                f"GLiNER model not found at {self._model_path}. "
-                "Run 'kuckuck fetch-model' to download it."
+                f"GLiNER model not found at {self._model_path}. Run 'kuckuck fetch-model' to download it."
             )
         # pylint: disable-next=import-outside-toplevel,import-error
         from gliner import GLiNER  # type: ignore[import-not-found]
@@ -149,9 +147,7 @@ class NerDetector:
         if not text.strip():
             return []
         model = self._load()
-        predictions: list[dict[str, Any]] = model.predict_entities(
-            text, labels=self._labels, threshold=self._threshold
-        )
+        predictions: list[dict[str, Any]] = model.predict_entities(text, labels=self._labels, threshold=self._threshold)
         spans: list[Span] = []
         for prediction in predictions:
             start = int(prediction["start"])
