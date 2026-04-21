@@ -178,9 +178,7 @@ def save_mapping(master: SecretStr, mapping: Mapping, path: Path | str) -> Path:
     return target
 
 
-def load_mapping(
-    master: SecretStr, path: Path | str, *, expected_key_id: str | None = None
-) -> Mapping:
+def load_mapping(master: SecretStr, path: Path | str, *, expected_key_id: str | None = None) -> Mapping:
     """Read and decrypt *path*, returning a populated :class:`Mapping`.
 
     When *expected_key_id* is given, raises :class:`MappingCorruptError` if
@@ -194,9 +192,7 @@ def load_mapping(
     if version != SCHEMA_VERSION:
         raise MappingCorruptError(f"unsupported mapping schema version: {version}")
     if expected_key_id is not None and key_id != expected_key_id:
-        raise MappingCorruptError(
-            f"key_id mismatch: expected {expected_key_id!r}, got {key_id!r}"
-        )
+        raise MappingCorruptError(f"key_id mismatch: expected {expected_key_id!r}, got {key_id!r}")
     plaintext = decrypt_mapping_payload(master, nonce, ciphertext, associated_data=header_bytes)
     payload = json.loads(plaintext.decode("utf-8"))
     entries = {token: MappingEntry(**entry) for token, entry in payload.get("entries", {}).items()}
