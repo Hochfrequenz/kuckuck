@@ -2,10 +2,11 @@
 
 Why GLiNER and not Flair / spaCy / transformers-NER?
 The CLI binary needs to ship a usable model. GLiNER's multilingual
-``urchade/gliner_multi-v2.1`` is roughly 200 MB on disk and uses ONNX-friendly
-weights, which keeps the resulting PyInstaller bundle around 800 MB rather
-than the 2 GB you get with Flair's German LM. Quality on German person names
-is comparable for our use case (signatures, salutations, mention lists).
+``urchade/gliner_multi-v2.1`` is ~ 1.1 GB on disk (safetensors + pickle
+duplicate) and uses ONNX-friendly weights. The PyInstaller NER binary
+ends up ~ 300 MB with CPU-only torch instead of the 2+ GB you get with
+Flair's German LM bundle. Quality on German person names is comparable
+for our use case (signatures, salutations, mention lists).
 
 The detector is intentionally **lazy**:
 
@@ -17,6 +18,12 @@ The detector is intentionally **lazy**:
   explicit fetch step. If the model is missing the detector raises
   :class:`NerModelMissingError` so the caller can decide between a soft skip
   (library API) and a hard exit (CLI when ``--ner`` is requested).
+
+Security note: ``GLiNER.from_pretrained`` deserialises pickle from the
+weights file. The CLI gates non-default ``--model-id`` values behind an
+``--allow-untrusted-model`` flag for that reason - a malicious repo
+running the bundled ``pytorch_model.bin`` through ``torch.load`` is
+effectively arbitrary code execution.
 """
 
 from __future__ import annotations
@@ -82,18 +89,30 @@ def is_gliner_installed() -> bool:
     return importlib_util.find_spec("gliner") is not None
 
 
+#: Filenames that indicate a populated model snapshot. We require AT LEAST
+#: one config marker AND at least one weights file, so a half-downloaded
+#: directory containing only ``config.json`` is correctly reported as
+#: unavailable. Without this check ``--ner`` would pass the precheck and
+#: then crash deep inside ``GLiNER.from_pretrained`` with an opaque error.
+_CONFIG_MARKERS = ("gliner_config.json", "config.json")
+_WEIGHT_MARKERS = ("model.safetensors", "pytorch_model.bin", "model.onnx")
+
+
 def is_model_available(path: Path | None = None) -> bool:
     """Return ``True`` when the model directory exists and looks populated.
 
-    GLiNER snapshots ship a ``gliner_config.json`` (the model's own config)
-    plus weight files; HuggingFace transformer snapshots use ``config.json``.
-    Accept either marker so the helper works for both layouts (and stays
-    robust to future repacks).
+    A populated snapshot must contain at least one config marker
+    (``gliner_config.json`` or ``config.json``) AND at least one weights
+    file (``model.safetensors``, ``pytorch_model.bin`` or ``model.onnx``).
+    The dual check guards against the common partial-download case where
+    only a small file landed before the network dropped.
     """
     target = path or default_model_path()
     if not target.is_dir():
         return False
-    return (target / "gliner_config.json").is_file() or (target / "config.json").is_file()
+    has_config = any((target / name).is_file() for name in _CONFIG_MARKERS)
+    has_weights = any((target / name).is_file() for name in _WEIGHT_MARKERS)
+    return has_config and has_weights
 
 
 class NerDetector:

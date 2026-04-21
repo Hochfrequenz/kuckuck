@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from kuckuck.detectors import EntityType
+from kuckuck.detectors.base import Priority
 from kuckuck.detectors.ner import (
     DEFAULT_LABELS,
     DEFAULT_THRESHOLD,
@@ -101,7 +102,7 @@ class TestNerDetectorWithFakeModel:
     def test_priority_lowest(self) -> None:
         # NER must yield to regex detectors when spans collide.
         det = NerDetector(model=_FakeModel())
-        assert det.priority == 10  # Priority.PERSON
+        assert det.priority == Priority.PERSON
 
     def test_span_text_is_sliced_from_input(self) -> None:
         # The model could theoretically return a 'text' field but we ignore
@@ -133,10 +134,26 @@ class TestModelDiscovery:
         target.mkdir()
         assert is_model_available(target) is False
 
-    def test_is_model_available_true_when_config_present(self, tmp_path: Path) -> None:
+    def test_is_model_available_false_for_config_without_weights(self, tmp_path: Path) -> None:
+        # Half-downloaded snapshot: config landed first, weights didn't.
+        # Must be reported as unavailable so --ner does not crash later.
         target = tmp_path / "model"
         target.mkdir()
         (target / "config.json").write_text("{}", encoding="utf-8")
+        assert is_model_available(target) is False
+
+    def test_is_model_available_true_for_complete_snapshot(self, tmp_path: Path) -> None:
+        target = tmp_path / "model"
+        target.mkdir()
+        (target / "gliner_config.json").write_text("{}", encoding="utf-8")
+        (target / "model.safetensors").write_bytes(b"")
+        assert is_model_available(target) is True
+
+    def test_is_model_available_accepts_pytorch_bin_weights(self, tmp_path: Path) -> None:
+        target = tmp_path / "model"
+        target.mkdir()
+        (target / "config.json").write_text("{}", encoding="utf-8")
+        (target / "pytorch_model.bin").write_bytes(b"")
         assert is_model_available(target) is True
 
 
@@ -186,10 +203,11 @@ class TestGlinerImportPath:
         # see the monkey-patched module.
         monkeypatch.setattr("kuckuck.detectors.ner.is_gliner_installed", lambda: True)
 
-        # Pretend the model is on disk.
+        # Pretend the model is on disk (config + weights).
         model_dir = tmp_path / "model"
         model_dir.mkdir()
         (model_dir / "config.json").write_text("{}", encoding="utf-8")
+        (model_dir / "model.safetensors").write_bytes(b"")
 
         det = NerDetector(model_path=model_dir)
         spans = det.detect("Anna says hi")
@@ -268,15 +286,26 @@ class TestRealModel:
             first_token in t for t in person_texts
         ), f"GLiNER did not detect '{full_name}' as a person. spans={person_texts!r}"
 
-    def test_does_not_flag_abstract_prose(self, detector: NerDetector) -> None:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Die Besprechung wurde verschoben, weil die Strategie noch nicht steht.",
+            "Die neue Software wurde gestern erfolgreich ausgerollt.",
+            "Im naechsten Quartal wird das Budget angepasst.",
+            "Die Datenbank wird automatisch jede Nacht gesichert.",
+            "Heute ist ein guter Tag, um an der Doku zu arbeiten.",
+        ],
+    )
+    def test_does_not_flag_abstract_prose(self, detector: NerDetector, text: str) -> None:
         # Counter-test: GLiNER is not perfect — it occasionally flags role
-        # nouns like "der Projektleiter". We accept that and only assert
-        # that abstract sentences without role nouns produce zero PERSON
-        # spans, which is the floor we need for usable pseudonymization.
-        text = "Die Besprechung wurde verschoben, weil die Strategie noch nicht steht."
+        # nouns like "der Projektleiter" (a known false-positive corridor
+        # we accept). We use multiple abstract sentences without role nouns
+        # to keep this from being flaky on a single example.
         spans = detector.detect(text)
         person_texts = [s.text for s in spans if s.entity_type == EntityType.PERSON]
-        assert person_texts == [], f"unexpected PERSON spans on abstract prose: {person_texts!r}"
+        assert person_texts == [], (
+            f"unexpected PERSON spans on abstract prose: {text!r} -> {person_texts!r}"
+        )
 
     def test_works_through_pseudonymize_pipeline(self, detector: NerDetector) -> None:
         # End-to-end: ensure NerDetector slots into pseudonymize_text
