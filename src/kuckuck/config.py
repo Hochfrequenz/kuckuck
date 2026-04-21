@@ -3,7 +3,9 @@
 The lookup order for ``.kuckuck-key`` (highest to lowest precedence):
 
 1. Explicit path passed to :func:`load_key` (e.g. via the CLI ``--key-file`` flag)
-2. Environment variable ``KUCKUCK_KEY_FILE`` (also resolved from a ``.env`` file)
+2. Environment variable ``KUCKUCK_KEY_FILE`` (also resolved from a ``.env`` file
+   via :mod:`pydantic_settings`, which keeps the value scoped to the Kuckuck
+   settings object and does **not** mutate :data:`os.environ`)
 3. Project-scoped: ``$PWD/.kuckuck-key``
 4. User-scoped (XDG-style): ``~/.config/kuckuck/key``
 5. :class:`KeyNotFoundError` with a hint to run ``kuckuck init-key``
@@ -16,7 +18,6 @@ import secrets
 import sys
 from pathlib import Path
 
-from dotenv import dotenv_values
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -38,34 +39,23 @@ class KeyNotFoundError(FileNotFoundError):
 
 
 class KuckuckSettings(BaseSettings):
-    """Runtime settings, populated from environment variables and ``.env`` files.
+    """Runtime settings driven by environment variables and ``.env`` files.
 
-    Currently only exposes the key-file path override. New user-facing
-    options (default denylist path, token prefix overrides, …) attach here
-    as the feature set grows. Reading ``.env`` via pydantic-settings is
-    scoped to this class and does **not** mutate :data:`os.environ` — the
-    ``.env`` file stays private to Kuckuck.
+    ``pydantic-settings`` resolves values from (in order): explicit kwargs,
+    real environment variables, and finally a project-local ``.env``. It
+    uses :mod:`python-dotenv` internally to read ``.env`` but — crucially —
+    keeps the values **scoped to this object** instead of mutating
+    :data:`os.environ`. That prevents accidentally inheriting ``.env``
+    secrets into subprocess environments (see the crypto review for why
+    the older ``load_dotenv()`` approach was removed).
+
+    Add new user-facing options (default denylist path, token prefix
+    overrides, …) as fields on this class as the feature set grows.
     """
 
     model_config = SettingsConfigDict(env_prefix="KUCKUCK_", env_file=".env", extra="ignore")
 
     key_file: str | None = None
-
-
-def _env_override(env_var: str = KEY_ENV_VAR) -> str | None:
-    """Look up *env_var* in ``os.environ`` and, if absent, in ``.env``.
-
-    Unlike :func:`dotenv.load_dotenv`, this does **not** mutate
-    :data:`os.environ` — so ``.env`` values stay out of subprocesses and
-    out of other library code that reads the environment.
-    """
-    value = os.environ.get(env_var)
-    if value:
-        return value
-    local_env = Path.cwd() / ".env"
-    if local_env.is_file():
-        return dotenv_values(local_env).get(env_var)
-    return None
 
 
 def _candidate_paths(explicit: Path | str | None) -> list[Path]:
@@ -75,7 +65,7 @@ def _candidate_paths(explicit: Path | str | None) -> list[Path]:
         candidates.append(Path(explicit).expanduser())
         return candidates
 
-    env_value = _env_override()
+    env_value = KuckuckSettings().key_file
     if env_value:
         candidates.append(Path(env_value).expanduser())
 
