@@ -502,22 +502,16 @@ class TestFetchModel:
         assert calls and calls[0]["repo_id"] == "urchade/gliner_multi-v2.1"
         assert "Done" in result.output
 
-    def test_fetch_rejects_non_default_model_id_without_allow(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_fetch_rejects_non_default_model_id_without_allow(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Defence-in-depth against pickle RCE: --model-id is gated behind
         # --allow-untrusted-model. The default model id (urchade/...) must
         # always work without the flag.
         monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
-        result = runner.invoke(
-            app, ["fetch-model", "--model-id", "attacker/evil-gliner"]
-        )
+        result = runner.invoke(app, ["fetch-model", "--model-id", "attacker/evil-gliner"])
         assert result.exit_code == 2  # EXIT_USAGE
         assert "--allow-untrusted-model" in result.output
 
-    def test_fetch_rejects_unsafe_slug(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_fetch_rejects_unsafe_slug(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Path traversal attempt via --model-id. The slug regex must reject
         # anything outside [A-Za-z0-9._-].
         monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
@@ -536,14 +530,10 @@ class TestFetchModel:
     def test_fetch_rejects_empty_slug(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
         # Trailing slash makes the slug empty.
-        result = runner.invoke(
-            app, ["fetch-model", "--model-id", "user/", "--allow-untrusted-model"]
-        )
+        result = runner.invoke(app, ["fetch-model", "--model-id", "user/", "--allow-untrusted-model"])
         assert result.exit_code == 2
 
-    def test_fetch_cleans_up_partial_cache_on_error(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_fetch_cleans_up_partial_cache_on_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # Simulate snapshot_download writing a partial file then crashing.
         # The next is_model_available check must report False so a
         # subsequent --ner call exits 7 cleanly instead of crashing inside
@@ -564,9 +554,7 @@ class TestFetchModel:
         monkeypatch.setitem(_sys.modules, "huggingface_hub", fake_mod)
 
         target_root = tmp_path / "cache"
-        result = runner.invoke(
-            app, ["fetch-model", "--cache-dir", str(target_root)]
-        )
+        result = runner.invoke(app, ["fetch-model", "--cache-dir", str(target_root)])
         assert result.exit_code == 7  # EXIT_MODEL_MISSING
         assert "Failed to download" in result.output
         # Partial directory must be gone after cleanup.
@@ -583,9 +571,7 @@ class TestFetchModel:
 
         # Make sure huggingface_hub import fails.
         monkeypatch.setitem(_sys.modules, "huggingface_hub", None)
-        result = runner.invoke(
-            app, ["fetch-model", "--cache-dir", str(tmp_path / "c")]
-        )
+        result = runner.invoke(app, ["fetch-model", "--cache-dir", str(tmp_path / "c")])
         assert result.exit_code == 7
         assert "huggingface_hub is missing" in result.output
 

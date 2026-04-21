@@ -303,9 +303,7 @@ class TestRealModel:
         # to keep this from being flaky on a single example.
         spans = detector.detect(text)
         person_texts = [s.text for s in spans if s.entity_type == EntityType.PERSON]
-        assert person_texts == [], (
-            f"unexpected PERSON spans on abstract prose: {text!r} -> {person_texts!r}"
-        )
+        assert person_texts == [], f"unexpected PERSON spans on abstract prose: {text!r} -> {person_texts!r}"
 
     def test_works_through_pseudonymize_pipeline(self, detector: NerDetector) -> None:
         # End-to-end: ensure NerDetector slots into pseudonymize_text
