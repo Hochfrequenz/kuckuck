@@ -10,14 +10,13 @@
 ![PyPi Status Badge](https://img.shields.io/pypi/v/kuckuck)
 
 Lokale Pseudonymisierung personenbezogener Daten in Textdateien, **bevor** du sie an Cloud-LLMs gibst.
-Inspiriert vom Kuckuck, der seine eigenen Eier in fremde Nester legt — das Pflegeelternteil merkt nichts: genau das macht dieses Tool mit Namen, E-Mail-Adressen und Telefonnummern in deinen Dokumenten.
 
 Was Kuckuck **ist**:
 
 - Ein lokales CLI- und Library-Tool in Python.
 Keine Cloud, keine Telemetrie.
 - Ein einfacher Weg, E-Mails, Jira-Tickets und Confluence-Exporte pseudonymisieren zu lassen, bevor du sie an Claude, ChatGPT oder ein anderes Cloud-LLM gibst.
-- Deterministisch: derselbe Name bekommt — über Dokumente und zwischen Teammitgliedern mit gleichem Key — denselben Token.
+- Deterministisch: derselbe Name bekommt - über Dokumente und zwischen Teammitgliedern mit gleichem Key - denselben Token.
 
 Was Kuckuck **nicht ist**:
 
@@ -40,13 +39,34 @@ Das heißt konkret:
 
 Lege den Key deshalb wie ein Passwort an und teile ihn nur über einen sicheren Kanal (Passwort-Manager wie 1Password/Bitwarden).
 
+### Ist „Key wegwerfen" gleich Anonymisierung?
+
+Jein - die ehrliche Antwort ist: es kommt auf drei Bedingungen an.
+
+Kuckuck ist per Definition ein **Pseudonymisierungs**-Tool nach DSGVO Art. 4 Nr. 5.
+Pseudonymisierte Daten bleiben personenbezogene Daten, solange die Zuordnung wiederherstellbar ist.
+Damit der pseudonymisierte Output als **anonymisiert** im Sinne von Erwägungsgrund 26 gelten kann, müssen *alle drei* folgenden Punkte erfüllt sein:
+
+1. **Alle Kopien des Keys sind zerstört** - im Passwort-Manager, in allen Backups, in allen Teammitglieder-Kopien, in allen CI-Caches.
+Solange irgendwo eine Kopie existiert, bleibt die Rückführung möglich und der Output bleibt pseudonymisiert, nicht anonymisiert.
+2. **Alle Kopien des Mappings sind zerstört** - oder zumindest alle Kopien der Originaldokumente, aus denen die Mappings rekonstruiert werden könnten.
+Wer die Original-E-Mail noch hat, kann per re-Pseudonymisierung die Zuordnung rekonstruieren.
+3. **Kontextuelle Re-Identifikation ist praktisch nicht möglich** - der pseudonymisierte Text enthält keine Kombinationen aus Rolle, Ort, Datum, Projektnamen, die eine Einzelperson eindeutig identifizieren.
+Kurze, generische Texte sind hier sicherer als lange, kontextreiche.
+
+Nur wenn alle drei Bedingungen zusammen erfüllt sind, ist der verbleibende Text nach DSGVO-Maßstab anonymisiert.
+In der Praxis ist Bedingung 3 die schwierigste: „der Geschäftsführer eines mittelständischen Bäckereibetriebs in 49716 Meppen" ist nach Weggabe des Keys zwar ohne Mapping nicht mehr über den Token rückführbar, aber weiterhin einer realen Person zuordenbar.
+
+**Kurz:** Den Key wegzuwerfen reicht in den meisten realistischen Szenarien nicht aus, um aus Pseudonymisierung eine Anonymisierung zu machen.
+Behandle den pseudonymisierten Output deshalb weiterhin als personenbezogenes Datum, bis dein DSB für dein konkretes Szenario etwas anderes feststellt.
+
 ## Was wird erkannt?
 
 | Entitätstyp | Erkennung |
 |---|---|
 | E-Mail-Adressen | Regex + `email-validator` für Vetting |
 | Telefonnummern | [`phonenumbers`](https://pypi.org/project/phonenumbers/) (Default-Region: DE) |
-| Jira-/Confluence-Handles | Regex — `@user.name`, `[~accountid:...]`, `[~user]` |
+| Jira-/Confluence-Handles | Regex - `@user.name`, `[~accountid:...]`, `[~user]` |
 | Denylist-Einträge | Kunden-/Projektnamen aus einer Datei |
 
 Personen-Namen via NER folgen in einem späteren Release.
@@ -68,8 +88,8 @@ pip install "kuckuck[cli]"
 
 Lade dir die plattformspezifische Binary von der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases):
 
-- `kuckuck_windows_<version>.exe` — Windows x64
-- `kuckuck_macos_arm64_<version>` — macOS Apple Silicon
+- `kuckuck_windows_<version>.exe` - Windows x64
+- `kuckuck_macos_arm64_<version>` - macOS Apple Silicon
 
 Nach dem Download umbenennen (optional) und Quarantäne-Attribut entfernen:
 
@@ -93,7 +113,7 @@ kuckuck init-key --project # alternativ ein Key pro Projekt: ./.kuckuck-key
 ### Key teilen
 
 Kopiere den Inhalt in euren Passwort-Manager (1Password, Bitwarden, …) und verteile ihn dort.
-Mit dem gleichen Key bekommt derselbe Name bei jedem Teammitglied denselben Token — ihr könnt pseudonymisierte Dokumente untereinander diskutieren.
+Mit dem gleichen Key bekommt derselbe Name bei jedem Teammitglied denselben Token - ihr könnt pseudonymisierte Dokumente untereinander diskutieren.
 
 ### Such-Reihenfolge (höchste → niedrigste Präferenz)
 
@@ -108,7 +128,7 @@ Key-Datei und Mapping-Sidecar dürfen **niemals** in ein Repo committet werden.
 Füge diese Zeilen in deine `.gitignore` ein:
 
 ```gitignore
-# Kuckuck — Schlüssel und verschlüsseltes Mapping (nie committen!)
+# Kuckuck - Schlüssel und verschlüsseltes Mapping (nie committen!)
 .kuckuck-key
 *.kuckuck-key
 *.kuckuck-map.enc
@@ -117,11 +137,11 @@ Füge diese Zeilen in deine `.gitignore` ein:
 *.pseudonymized.*
 ```
 
-`*.kuckuck-map.enc` ist zwar AES-GCM-verschlüsselt, ein Commit ins Repo würde aber den Blast-Radius eines versehentlich geleakten Keys massiv vergrößern — besser gar nicht erst committen.
+`*.kuckuck-map.enc` ist zwar AES-GCM-verschlüsselt, ein Commit ins Repo würde aber den Blast-Radius eines versehentlich geleakten Keys massiv vergrößern - besser gar nicht erst committen.
 
 ## CLI-Nutzung
 
-**Einfachster Fall — Datei direkt ersetzen:**
+**Einfachster Fall - Datei direkt ersetzen:**
 
 ```bash
 kuckuck brief.txt
@@ -157,7 +177,7 @@ kuckuck brief.txt --dry-run
 **Mit Denylist für Kunden-/Projektnamen:**
 
 ```bash
-# denylist.txt — eine Zeile pro Eintrag, # sind Kommentare
+# denylist.txt - eine Zeile pro Eintrag, # sind Kommentare
 echo "Kunde Alpha GmbH" >> denylist.txt
 echo "Projekt Zugspitze" >> denylist.txt
 
@@ -261,20 +281,20 @@ kuckuck restore <file>         # Original wiederherstellen, nachdem die
 ```
 
 Erkennung im aktuellen MVP:
-- `[[EMAIL_...]]` — E-Mail-Adresse
-- `[[PHONE_...]]` — Telefonnummer
-- `[[HANDLE_...]]` — Jira-/Confluence-Mention
-- `[[DENYLIST_...]]` — Eintrag aus `denylist.txt` (Kunden/Projekte)
+- `[[EMAIL_...]]` - E-Mail-Adresse
+- `[[PHONE_...]]` - Telefonnummer
+- `[[HANDLE_...]]` - Jira-/Confluence-Mention
+- `[[DENYLIST_...]]` - Eintrag aus `denylist.txt` (Kunden/Projekte)
 
-Personen-Namen-Erkennung (`[[PERSON_...]]`) folgt in einer späteren Kuckuck-Version via NER-Modell — bis dahin nur Regex-basierte Erkennung.
+Personen-Namen-Erkennung (`[[PERSON_...]]`) folgt in einer späteren Kuckuck-Version via NER-Modell - bis dahin nur Regex-basierte Erkennung.
 
 Gleiche Namen bekommen den gleichen Token, auch dokumentübergreifend.
-Du (Assistent) darfst bei der Analyse annehmen, dass `[[HANDLE_abc]]` mit gleichem Suffix in mehreren Dokumenten dieselbe Entität ist — ohne den Klartext zu benötigen.
+Du (Assistent) darfst bei der Analyse annehmen, dass `[[HANDLE_abc]]` mit gleichem Suffix in mehreren Dokumenten dieselbe Entität ist - ohne den Klartext zu benötigen.
 
 Regeln:
 1. Vor dem ersten Read einer `.eml` / `.msg` / exportierten Jira-/Confluence-Datei: `kuckuck <file>` aufrufen.
 2. In Commits niemals die `*.kuckuck-map.enc`-Dateien oder `.kuckuck-key` mit-committen (sind in `.gitignore`).
-3. Tokens in deinen Antworten **nicht** auflösen — der Nutzer führt den Restore-Schritt lokal aus.
+3. Tokens in deinen Antworten **nicht** auflösen - der Nutzer führt den Restore-Schritt lokal aus.
 ````
 
 ### System-Prompt für Cloud-LLMs (Direct API)
@@ -289,12 +309,12 @@ Wenn du pseudonymisierten Text per API an Claude, GPT oder Gemini schickst, erg�
 
 ## Erkannte Grenzen
 
-- **Kontextuelle Re-Identifikation:** „Der Geschäftsführer eines mittelständischen Bäckereibetriebs in 49716 Meppen" ist praktisch eindeutig — Kuckuck ersetzt Namen, nicht Kontexte.
+- **Kontextuelle Re-Identifikation:** „Der Geschäftsführer eines mittelständischen Bäckereibetriebs in 49716 Meppen" ist praktisch eindeutig - Kuckuck ersetzt Namen, nicht Kontexte.
 Kurze Texte sind sicherer als lange.
-- **Seltene Namen / Initialen:** Regex kennt keine Namen — bis zum NER-Release (geplant als PR 2) werden Klarnamen nur erkannt, wenn sie in Handles oder der Denylist stehen.
+- **Seltene Namen / Initialen:** Regex kennt keine Namen - bis zum NER-Release (geplant als PR 2) werden Klarnamen nur erkannt, wenn sie in Handles oder der Denylist stehen.
 - **Formate:** Plain-Text.
-E-Mails (`.eml`, `.msg`), Markdown und XML werden in PR 3 format-aware behandelt — aktuell läuft die Pipeline naiv über den Rohtext, Code-Blocks und Attribute können false-positive Ersetzungen bekommen.
-- **Linkage-Risiko:** Durch die Cross-Document-Konsistenz kann ein Cloud-LLM-Provider — wenn er Logs speichert — Tokens über Sessions verketten.
+E-Mails (`.eml`, `.msg`), Markdown und XML werden in PR 3 format-aware behandelt - aktuell läuft die Pipeline naiv über den Rohtext, Code-Blocks und Attribute können false-positive Ersetzungen bekommen.
+- **Linkage-Risiko:** Durch die Cross-Document-Konsistenz kann ein Cloud-LLM-Provider - wenn er Logs speichert - Tokens über Sessions verketten.
 Für Anthropic/OpenAI B2B mit ausgeschalteter Trainings-Nutzung in der Praxis irrelevant, im eigenen Compliance-Kontext aber evaluieren.
 
 ## Development
@@ -317,4 +337,4 @@ Die Dev-Environment-Einrichtung und PyCharm/VS-Code-Integration sind im [Templat
 
 ## Lizenz
 
-MIT — siehe das LICENSE-File bei Inklusion im Release.
+MIT - siehe das LICENSE-File bei Inklusion im Release.
