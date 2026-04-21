@@ -21,23 +21,23 @@ classifiers = [
     "Topic :: Text Processing",
 ]
 dependencies = [
-    "pydantic>=2",
-    "pydantic-settings>=2",
-    "python-dotenv>=1",
-    "cryptography>=42",
-    "phonenumbers>=8",
-    "pyahocorasick>=2",
+    "pydantic==2.13.3",
+    "pydantic-settings==2.14.0",
+    "python-dotenv==1.2.2",
+    "cryptography==46.0.7",
+    "phonenumbers==9.0.28",
+    "pyahocorasick==2.3.0",
 ]
 dynamic = ["readme", "version"]
 
 [project.optional-dependencies]
 cli = [
-    "typer>=0.12"
+    "typer==0.24.1"
 ]
 tests = [
     "pytest==9.0.3",
     "syrupy==5.1.0",
-    "hypothesis>=6.100"
+    "hypothesis==6.152.1"
 ]
 linting = [
     "pylint==4.0.5"
@@ -60,7 +60,7 @@ packaging = [
     "twine==6.2.0"
 ]
 build_executable = [
-    "pyinstaller>=6"
+    "pyinstaller==6.19.0"
 ]
 dev = [
     "pip-tools"
