@@ -102,6 +102,17 @@ class TestMarkdownPreprocessor:
         # Heading structure preserved.
         assert "# Heading" in result.text
 
+    def test_sentinel_lookalike_in_user_prose_survives_round_trip(self) -> None:
+        # Per-document salted sentinel: even text containing the static
+        # KUCKUCKINLINECODE prefix must not collide with the masking step.
+        pre = MarkdownPreprocessor()
+        source = "Reference: KUCKUCKINLINECODE_aaaaaaaaaaaaaaaa_42_ENDCODE plus my email `max@firma.de`\n"
+        chunks = pre.extract(source)
+        rebuilt = pre.reassemble(source, chunks)
+        # Reassembly without any chunk modification must reproduce the
+        # input exactly, including the lookalike literal.
+        assert rebuilt == source
+
 
 class TestEmlPreprocessor:
     def test_extract_skips_headers(self) -> None:
@@ -192,6 +203,24 @@ class TestMsgPreprocessor:
         assert "<p>" not in text
         assert "<b>" not in text
 
+    def test_html_strip_drops_script_and_style(self) -> None:
+        # pylint: disable-next=protected-access
+        from kuckuck.preprocessors.msg import _html_to_text
+
+        html = (
+            "<html><body>"
+            '<script>var x = "secret@hacker.com"</script>'
+            "<style>body { color: red; }</style>"
+            "<p>Hi from max@firma.de</p>"
+            "</body></html>"
+        )
+        text = _html_to_text(html)
+        # PII inside <script>/<style> must NOT show up in the extracted text.
+        assert "secret@hacker.com" not in text
+        assert "color: red" not in text
+        # Real prose still comes through.
+        assert "max@firma.de" in text
+
     def test_rtf_strip_recovers_prose(self) -> None:
         # pylint: disable-next=protected-access
         from kuckuck.preprocessors.msg import _rtf_to_text
@@ -209,6 +238,39 @@ class TestMsgPreprocessor:
         ]
         rebuilt = pre.reassemble(b"unused", chunks)
         assert rebuilt == "firstsecond"
+
+    def test_extract_dispatches_to_extract_msg_with_fake_module(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Verify the .msg pipeline wiring (path -> openMsg -> body) without
+        # needing a real .msg compound-document fixture committed to the repo.
+        import sys
+        import types
+
+        opened_paths: list[str] = []
+        attachments_sig: list[int] = []
+
+        class FakeMsg:
+            def __init__(self, path: str, attachments: int = 0) -> None:
+                opened_paths.append(path)
+                attachments_sig.append(attachments)
+                self.attachments = list(range(attachments))
+                # extract-msg uses camelCase attribute names; mirror them.
+                self.htmlBody = b""  # pylint: disable=invalid-name
+                self.rtfBody = b""  # pylint: disable=invalid-name
+                self.body = "Hallo Hans, ruf max@firma.de an"
+
+            def close(self) -> None:
+                pass
+
+        fake_module = types.ModuleType("extract_msg")
+        fake_module.openMsg = lambda p, **kw: FakeMsg(str(p))  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "extract_msg", fake_module)
+
+        pre = MsgPreprocessor()
+        chunks = pre.extract("/some/path/foo.msg")
+        joined = "".join(c.text for c in chunks)
+        assert opened_paths == ["/some/path/foo.msg"]
+        assert "max@firma.de" in joined
+        assert "Hans" in joined
 
 
 class TestXmlPreprocessor:
@@ -256,6 +318,28 @@ class TestXmlPreprocessor:
         # the symbol that pylint cannot resolve through the lxml stubs.
         with pytest.raises(SyntaxError):
             pre.extract("<root><unclosed>")
+
+    def test_xxe_external_entity_blocked(self, tmp_path: Path) -> None:
+        # XML External Entity attack: a hostile .xml file should not be
+        # able to leak local file contents through entity expansion.
+        secret = tmp_path / "secret.txt"
+        secret.write_text("LEAKED-SECRET-PAYLOAD", encoding="utf-8")
+        hostile = "<?xml version='1.0'?>" f'<!DOCTYPE r [<!ENTITY xxe SYSTEM "file://{secret}">]>' "<r>&xxe;</r>"
+        pre = XmlPreprocessor()
+        chunks = pre.extract(hostile)
+        joined = "".join(c.text for c in chunks)
+        assert "LEAKED-SECRET-PAYLOAD" not in joined
+
+    def test_cdata_wrapper_preserved_through_round_trip(self) -> None:
+        # CDATA-wrapped content must remain CDATA-wrapped after the
+        # preprocessor rewrites the element's text - Confluence Storage
+        # Format relies on this for ac:plain-text-body macro params.
+        pre = XmlPreprocessor()
+        source = "<root><body><![CDATA[max@firma.de]]></body></root>"
+        result = pseudonymize_text(source, MASTER, preprocessor=pre)
+        assert "<![CDATA[" in result.text
+        assert "[[EMAIL_" in result.text
+        assert "max@firma.de" not in result.text
 
 
 class TestPipelineSnapshots:

@@ -321,3 +321,60 @@ class TestFormatFlag:
         result = _invoke([str(source), "--key-file", str(key_file)])
         assert result.exit_code == 0
         assert "[[EMAIL_" in source.read_text(encoding="utf-8")
+
+    def test_invalid_xml_returns_friendly_error(self, tmp_path: Path, key_file: Path) -> None:
+        # Plain text saved as .xml: the parser raises XMLSyntaxError which
+        # the CLI must translate into a one-line message + EXIT_USAGE,
+        # not a multi-screen Python traceback.
+        source = tmp_path / "broken.xml"
+        source.write_text("just plain text max@firma.de", encoding="utf-8")
+        result = _invoke([str(source), "--key-file", str(key_file)])
+        assert result.exit_code == 2  # EXIT_USAGE
+        assert "invalid xml document" in result.output.lower()
+        assert "Try --format text" in result.output
+
+    def test_binary_input_returns_friendly_error(self, tmp_path: Path, key_file: Path) -> None:
+        # A raw binary file passed without --format msg should not crash
+        # with a Unicode traceback.
+        source = tmp_path / "doc.bin"
+        source.write_bytes(b"\xff\xfe\x00\x01\x02binary garbage\xff")
+        result = _invoke([str(source), "--key-file", str(key_file)])
+        assert result.exit_code == 2  # EXIT_USAGE
+        assert "cannot decode" in result.output.lower()
+        assert "--format msg" in result.output
+
+    def test_msg_format_dispatches_to_pseudonymize_msg_file(
+        self, tmp_path: Path, key_file: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # End-to-end CLI run on a stub .msg: the MsgPreprocessor reads
+        # the path itself, NOT the decoded text. We swap extract_msg with
+        # a fake module so the test does not need a real OLE compound doc.
+        import sys
+        import types
+
+        class FakeMsg:
+            def __init__(self) -> None:
+                # extract-msg uses camelCase attribute names. We mirror
+                # them here so the duck-typed access in MsgPreprocessor
+                # works against the fake.
+                self.attachments: list[int] = []
+                self.htmlBody = b""  # pylint: disable=invalid-name
+                self.rtfBody = b""  # pylint: disable=invalid-name
+                self.body = "Hallo max@firma.de"
+
+            def close(self) -> None:
+                pass
+
+        fake_module = types.ModuleType("extract_msg")
+        fake_module.openMsg = lambda p, **kw: FakeMsg()  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "extract_msg", fake_module)
+
+        # The file must exist for path.is_file() to pass; its contents
+        # are irrelevant because the fake module does not read them.
+        source = tmp_path / "stub.msg"
+        source.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")  # OLE magic prefix
+        result = runner.invoke(app, ["run", str(source), "--key-file", str(key_file), "--format", "msg"])
+        assert result.exit_code == 0, result.output
+        out = source.read_text(encoding="utf-8")
+        assert "[[EMAIL_" in out
+        assert "max@firma.de" not in out
