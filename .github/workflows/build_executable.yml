@@ -21,6 +21,14 @@ jobs:
             tox_env: build_executable_macos
             artifact: kuckuck_macos_arm64
             binary: kuckuck_macos_arm64
+          - os: windows-latest
+            tox_env: build_executable_ner
+            artifact: kuckuck_windows_ner
+            binary: kuckuck_windows_ner.exe
+          - os: macos-latest
+            tox_env: build_executable_macos_ner
+            artifact: kuckuck_macos_arm64_ner
+            binary: kuckuck_macos_arm64_ner
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -34,7 +42,7 @@ jobs:
           pip install tox
           tox -e ${{ matrix.tox_env }}
       - name: Freeze build dependencies
-        run: tox exec -e ${{ matrix.tox_env }} -- pip freeze > dist/build-dependencies.txt
+        run: tox exec -e ${{ matrix.tox_env }} -- pip freeze > dist/build-dependencies-${{ matrix.artifact }}.txt
         shell: bash
       - name: Upload Executable as Artifact
         uses: actions/upload-artifact@v7
@@ -42,7 +50,33 @@ jobs:
           name: ${{ matrix.artifact }}
           path: |
             dist/${{ matrix.binary }}
-            dist/build-dependencies.txt
+            dist/build-dependencies-${{ matrix.artifact }}.txt
+
+  # Cache the GLiNER model snapshot once across the matrix so the NER smoke
+  # test does not re-download 1.1 GB on every run. Subsequent matrix entries
+  # restore from this cache via the actions/cache restore step.
+  fetch_ner_model:
+    runs-on: ubuntu-latest
+    name: "Fetch GLiNER model (cached)"
+    steps:
+      - name: Restore model cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/kuckuck/models
+          key: gliner-multi-v2.1
+      - name: Set up Python
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Download model
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          pip install huggingface-hub
+          python -c "from huggingface_hub import snapshot_download; \
+            snapshot_download(repo_id='urchade/gliner_multi-v2.1', \
+            local_dir='${HOME}/.cache/kuckuck/models/gliner_multi-v2.1')"
 
   smoke_test:
     needs: build
@@ -53,11 +87,21 @@ jobs:
           - os: windows-latest
             artifact: kuckuck_windows
             binary: kuckuck_windows.exe
+            ner: false
           - os: macos-latest
             artifact: kuckuck_macos_arm64
             binary: kuckuck_macos_arm64
+            ner: false
+          - os: windows-latest
+            artifact: kuckuck_windows_ner
+            binary: kuckuck_windows_ner.exe
+            ner: true
+          - os: macos-latest
+            artifact: kuckuck_macos_arm64_ner
+            binary: kuckuck_macos_arm64_ner
+            ner: true
     runs-on: ${{ matrix.os }}
-    name: "Smoke Test (${{ matrix.os }})"
+    name: "Smoke Test (${{ matrix.artifact }})"
     steps:
       - uses: actions/checkout@v6
       - name: Set up Python
@@ -75,8 +119,18 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: chmod +x dist/${{ matrix.binary }}
         shell: bash
+      - name: Restore GLiNER model cache (NER builds)
+        if: matrix.ner == true
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/kuckuck/models
+          key: gliner-multi-v2.1
       - name: Smoke Test
         run: python unittests/smoke_test_exe.py dist/${{ matrix.binary }}
+      - name: NER Smoke Test
+        if: matrix.ner == true
+        run: python unittests/smoke_test_exe_ner.py dist/${{ matrix.binary }}
+        shell: bash
 
   release:
     needs: [build, smoke_test]
@@ -97,6 +151,18 @@ jobs:
           name: kuckuck_macos_arm64
           path: dist/macos
         continue-on-error: true
+      - name: Download Windows NER Executable
+        uses: actions/download-artifact@v8
+        with:
+          name: kuckuck_windows_ner
+          path: dist/windows_ner
+        continue-on-error: true
+      - name: Download macOS NER Executable
+        uses: actions/download-artifact@v8
+        with:
+          name: kuckuck_macos_arm64_ner
+          path: dist/macos_ner
+        continue-on-error: true
       - name: Rename Executables with version
         run: |
           set -eu
@@ -113,6 +179,18 @@ jobs:
           else
             echo "::warning::macOS arm64 artifact missing; skipping"
           fi
+          if [ -f ./dist/windows_ner/kuckuck_windows_ner.exe ]; then
+            mv ./dist/windows_ner/kuckuck_windows_ner.exe \
+              ./dist/release/kuckuck_windows_ner_${{ github.ref_name }}.exe
+          else
+            echo "::warning::Windows NER artifact missing; skipping"
+          fi
+          if [ -f ./dist/macos_ner/kuckuck_macos_arm64_ner ]; then
+            mv ./dist/macos_ner/kuckuck_macos_arm64_ner \
+              ./dist/release/kuckuck_macos_arm64_ner_${{ github.ref_name }}
+          else
+            echo "::warning::macOS arm64 NER artifact missing; skipping"
+          fi
           ls -la dist/release/
       - name: Upload Executable to Release
         uses: softprops/action-gh-release@v3
@@ -120,4 +198,6 @@ jobs:
           files: |
             ./dist/release/kuckuck_windows_${{ github.ref_name }}.exe
             ./dist/release/kuckuck_macos_arm64_${{ github.ref_name }}
+            ./dist/release/kuckuck_windows_ner_${{ github.ref_name }}.exe
+            ./dist/release/kuckuck_macos_arm64_ner_${{ github.ref_name }}
           fail_on_unmatched_files: false
