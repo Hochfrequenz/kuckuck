@@ -378,3 +378,131 @@ class TestFormatFlag:
         out = source.read_text(encoding="utf-8")
         assert "[[EMAIL_" in out
         assert "max@firma.de" not in out
+
+
+class TestNerFlag:
+    def test_run_ner_without_gliner_exits_model_missing(
+        self, tmp_path: Path, key_file: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: False)
+        source = tmp_path / "doc.txt"
+        source.write_text("Kontakt max@firma.de", encoding="utf-8")
+        result = runner.invoke(app, ["run", str(source), "--key-file", str(key_file), "--ner"])
+        assert result.exit_code == 7  # EXIT_MODEL_MISSING
+        assert "gliner" in result.output.lower()
+
+    def test_run_ner_without_model_exits_model_missing(
+        self, tmp_path: Path, key_file: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
+        monkeypatch.setattr("kuckuck.__main__.is_model_available", lambda: False)
+        source = tmp_path / "doc.txt"
+        source.write_text("Kontakt max@firma.de", encoding="utf-8")
+        result = runner.invoke(app, ["run", str(source), "--key-file", str(key_file), "--ner"])
+        assert result.exit_code == 7
+        assert "fetch-model" in result.output
+
+    def test_run_no_ner_works_without_gliner(
+        self, tmp_path: Path, key_file: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Without --ner, the run path must succeed even when gliner is missing.
+        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: False)
+        source = tmp_path / "doc.txt"
+        source.write_text("Kontakt max@firma.de", encoding="utf-8")
+        result = runner.invoke(app, ["run", str(source), "--key-file", str(key_file)])
+        assert result.exit_code == 0
+
+
+class TestFetchModel:
+    def test_fetch_without_gliner_exits_model_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: False)
+        result = runner.invoke(app, ["fetch-model"])
+        assert result.exit_code == 7
+        assert "kuckuck[ner]" in result.output
+
+    def test_fetch_skips_when_already_present(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
+        target_root = tmp_path / "cache"
+        # Pre-create a populated model dir for the default model id slug.
+        model_dir = target_root / "gliner_multi-v2.1"
+        model_dir.mkdir(parents=True)
+        (model_dir / "config.json").write_text("{}", encoding="utf-8")
+
+        result = runner.invoke(app, ["fetch-model", "--cache-dir", str(target_root)])
+        assert result.exit_code == 0
+        assert "already present" in result.output
+
+    def test_fetch_invokes_snapshot_download(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
+        calls: list[dict[str, str]] = []
+
+        def fake_snapshot_download(repo_id: str, local_dir: str) -> str:
+            calls.append({"repo_id": repo_id, "local_dir": local_dir})
+            Path(local_dir).mkdir(parents=True, exist_ok=True)
+            (Path(local_dir) / "config.json").write_text("{}", encoding="utf-8")
+            return local_dir
+
+        # Inject a fake huggingface_hub module so the import inside
+        # cmd_fetch_model resolves without a real install.
+        import sys as _sys
+        import types as _types
+
+        fake_mod = _types.ModuleType("huggingface_hub")
+        fake_mod.snapshot_download = fake_snapshot_download  # type: ignore[attr-defined]
+        monkeypatch.setitem(_sys.modules, "huggingface_hub", fake_mod)
+
+        result = runner.invoke(app, ["fetch-model", "--cache-dir", str(tmp_path / "cache")])
+        assert result.exit_code == 0
+        assert calls and calls[0]["repo_id"] == "urchade/gliner_multi-v2.1"
+        assert "Done" in result.output
+
+    def test_fetch_force_redownloads(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
+        target_root = tmp_path / "cache"
+        model_dir = target_root / "gliner_multi-v2.1"
+        model_dir.mkdir(parents=True)
+        (model_dir / "config.json").write_text("{}", encoding="utf-8")
+
+        called = {"n": 0}
+
+        def fake_snapshot_download(  # pylint: disable=unused-argument
+            repo_id: str, local_dir: str
+        ) -> str:
+            called["n"] += 1
+            return local_dir
+
+        import sys as _sys
+        import types as _types
+
+        fake_mod = _types.ModuleType("huggingface_hub")
+        fake_mod.snapshot_download = fake_snapshot_download  # type: ignore[attr-defined]
+        monkeypatch.setitem(_sys.modules, "huggingface_hub", fake_mod)
+
+        result = runner.invoke(
+            app, ["fetch-model", "--cache-dir", str(target_root), "--force"]
+        )
+        assert result.exit_code == 0
+        assert called["n"] == 1
+
+
+class TestListDetectorsWithNer:
+    def test_listing_includes_ner_when_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
+        monkeypatch.setattr("kuckuck.__main__.is_model_available", lambda: True)
+        result = runner.invoke(app, ["list-detectors"])
+        assert result.exit_code == 0
+        assert "ner" in result.output
+
+    def test_listing_omits_ner_when_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: False)
+        result = runner.invoke(app, ["list-detectors"])
+        assert result.exit_code == 0
+        assert "\nner " not in result.output and not result.output.startswith("ner ")
