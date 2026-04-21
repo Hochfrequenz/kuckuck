@@ -261,3 +261,63 @@ class TestVersion:
     def test_runs(self) -> None:
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0
+
+
+class TestFormatFlag:
+    def test_auto_detects_eml_by_suffix(self, tmp_path: Path, key_file: Path) -> None:
+        source = tmp_path / "msg.eml"
+        source.write_text(
+            "From: a@example.com\nTo: b@example.com\nSubject: hi\n\nKontakt max@firma.de\n",
+            encoding="utf-8",
+        )
+        result = _invoke([str(source), "--key-file", str(key_file)])
+        assert result.exit_code == 0
+        out = source.read_text(encoding="utf-8")
+        # Body got tokenized.
+        assert "[[EMAIL_" in out
+        # Headers stayed intact (eml preprocessor leaves them alone).
+        assert "From:" in out
+        assert "a@example.com" in out
+
+    def test_auto_detects_markdown_by_suffix(self, tmp_path: Path, key_file: Path) -> None:
+        source = tmp_path / "doc.md"
+        source.write_text(
+            "# Hi\n\nMail: max@firma.de\n\n```\nprivate code: max@firma.de\n```\n",
+            encoding="utf-8",
+        )
+        result = _invoke([str(source), "--key-file", str(key_file)])
+        assert result.exit_code == 0
+        out = source.read_text(encoding="utf-8")
+        # Code block content stays untouched.
+        assert "private code: max@firma.de" in out
+        # Prose got tokenized.
+        assert "Mail: [[EMAIL_" in out
+
+    def test_explicit_format_overrides_suffix(self, tmp_path: Path, key_file: Path) -> None:
+        source = tmp_path / "looks.eml"  # suffix says eml
+        source.write_text("Hallo max@firma.de", encoding="utf-8")
+        result = runner.invoke(
+            app,
+            ["run", str(source), "--key-file", str(key_file), "--format", "text"],
+        )
+        # Text preprocessor treats whole input as one chunk - no header
+        # parsing - so the email is found and tokenized.
+        assert result.exit_code == 0
+        out = source.read_text(encoding="utf-8")
+        assert "[[EMAIL_" in out
+
+    def test_unknown_format_returns_error(self, tmp_path: Path, key_file: Path) -> None:
+        source = tmp_path / "doc.txt"
+        source.write_text("text", encoding="utf-8")
+        result = runner.invoke(
+            app,
+            ["run", str(source), "--key-file", str(key_file), "--format", "weird"],
+        )
+        assert result.exit_code != 0
+
+    def test_unknown_suffix_falls_back_to_text(self, tmp_path: Path, key_file: Path) -> None:
+        source = tmp_path / "doc.weirdsuffix"
+        source.write_text("Hallo max@firma.de\n", encoding="utf-8")
+        result = _invoke([str(source), "--key-file", str(key_file)])
+        assert result.exit_code == 0
+        assert "[[EMAIL_" in source.read_text(encoding="utf-8")
