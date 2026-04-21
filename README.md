@@ -68,9 +68,10 @@ Behandle den pseudonymisierten Output deshalb weiterhin als personenbezogenes Da
 | Telefonnummern | [`phonenumbers`](https://pypi.org/project/phonenumbers/) (Default-Region: DE) |
 | Jira-/Confluence-Handles | Regex - `@user.name`, `[~accountid:...]`, `[~user]` |
 | Denylist-Einträge | Kunden-/Projektnamen aus einer Datei |
+| Personen-Namen | Optional via [GLiNER](https://github.com/urchade/GLiNER) (`urchade/gliner_multi-v2.1`), Opt-in per `--ner` |
 
 Die Regex-Detektoren decken die häufigsten Datenquellen (Mail-Signaturen, Jira-Reporter, Confluence-Mentions) ohne ML ab.
-Klarnamen ohne Handle landen erst im Mapping, wenn der optionale NER-Detektor (`--ner`, separates Release) aktiv ist.
+Klarnamen ohne Handle werden erst beim Opt-in zum NER-Detektor erfasst.
 
 ### Unterstützte Eingabeformate
 
@@ -94,14 +95,23 @@ pip install kuckuck
 
 # Zusätzlich die CLI installieren
 pip install "kuckuck[cli]"
+
+# CLI plus optionaler GLiNER-Personen-Detektor (zieht torch + gliner)
+pip install "kuckuck[cli,ner]"
 ```
 
 ### Als Standalone-Binary
 
-Lade dir die plattformspezifische Binary von der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases):
+Lade dir die plattformspezifische Binary von der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases).
+Es gibt jeweils zwei Varianten:
 
-- `kuckuck_windows_<version>.exe` - Windows x64
-- `kuckuck_macos_arm64_<version>` - macOS Apple Silicon
+| Variante | Dateiname | Größe | NER (`--ner`) |
+|---|---|---|---|
+| Slim (Default) | `kuckuck_windows_<version>.exe`, `kuckuck_macos_arm64_<version>` | ~ 30 MB | nicht verfügbar |
+| NER | `kuckuck_windows_ner_<version>.exe`, `kuckuck_macos_arm64_ner_<version>` | ~ 300 MB | verfügbar |
+
+Die Slim-Variante reicht für Regex-basierte Erkennung (E-Mail, Telefon, Handles, Denylist).
+Die NER-Variante bringt zusätzlich gliner + CPU-only torch mit, sodass `kuckuck --ner` und `kuckuck fetch-model` direkt aus dem Binary funktionieren.
 
 Nach dem Download umbenennen (optional) und Quarantäne-Attribut entfernen:
 
@@ -218,6 +228,21 @@ kuckuck brief.txt --sequential-tokens
 # -> [[EMAIL_1]], [[EMAIL_2]], ... pro Dokument
 ```
 
+**Mit NER-Detektor für Personennamen:**
+
+```bash
+# einmalig: Modell laden (ca. 1.1 GB ins ~/.cache/kuckuck/models/)
+pip install "kuckuck[ner]"
+kuckuck fetch-model
+
+# danach beliebig oft - vollständig offline
+kuckuck brief.txt --ner
+# -> "Max Mustermann" wird zu [[PERSON_a7f3b2c1]]
+```
+
+Der NER-Detektor läuft erst, wenn er mit `--ner` aktiviert wird, damit die Default-Pipeline kein torch laden muss.
+Ohne installiertes `kuckuck[ner]`-Extra oder ohne lokales Modell beendet sich `kuckuck --ner` mit Exit-Code 7 und einem Hinweis.
+
 **Mapping inspizieren (für Debugging, gibt Klartext aus):**
 
 ```bash
@@ -228,9 +253,10 @@ kuckuck inspect brief.txt.kuckuck-map.enc
 
 ```
 kuckuck <file>...          Pseudonymisieren (Default)
-kuckuck run <file>...      Explizit (identisch zur Default-Form)
+kuckuck run <file>...      Explizit (identisch zur Default-Form), nimmt --ner
 kuckuck restore <file>...  Mapping anwenden, Original wiederherstellen
 kuckuck init-key           Neuen Master-Key generieren
+kuckuck fetch-model        GLiNER-Modell laden (nur mit kuckuck[ner])
 kuckuck inspect <map>      Verschlüsseltes Mapping als Klartext dumpen
 kuckuck list-detectors     Alle registrierten Detektoren zeigen
 kuckuck version            Version ausgeben
@@ -307,13 +333,12 @@ kuckuck restore <file>         # Original wiederherstellen, nachdem die
                                # Analyse abgeschlossen ist
 ```
 
-Erkennung im aktuellen MVP:
+Erkennung:
 - `[[EMAIL_...]]` - E-Mail-Adresse
 - `[[PHONE_...]]` - Telefonnummer
 - `[[HANDLE_...]]` - Jira-/Confluence-Mention
 - `[[TERM_...]]` - Eintrag aus `denylist.txt` (Kunden/Projekte)
-
-Personen-Namen-Erkennung (`[[PERSON_...]]`) folgt in einer späteren Kuckuck-Version via NER-Modell - bis dahin nur Regex-basierte Erkennung.
+- `[[PERSON_...]]` - Personenname (nur mit `kuckuck --ner`, vorher `kuckuck fetch-model` einmalig)
 
 Eingabeformate, die Kuckuck strukturiert erkennt:
 - `.eml` (E-Mail mit Headern + Body, Signatur-Trigger werden separiert)
@@ -345,7 +370,8 @@ Wenn du pseudonymisierten Text per API an Claude, GPT oder Gemini schickst, erg�
 
 - **Kontextuelle Re-Identifikation:** „Der Geschäftsführer eines mittelständischen Bäckereibetriebs in 49716 Meppen" ist praktisch eindeutig - Kuckuck ersetzt Namen, nicht Kontexte.
 Kurze Texte sind sicherer als lange.
-- **Seltene Namen / Initialen:** Regex kennt keine Namen - bis zum NER-Release (geplant als PR 2) werden Klarnamen nur erkannt, wenn sie in Handles oder der Denylist stehen.
+- **Seltene Namen / Initialen:** Die Regex-Pipeline kennt keine Namen.
+Klarnamen ohne Handle landen nur dann im Mapping, wenn der NER-Detektor (`--ner`) aktiviert ist - GLiNER ist multilingual und auf deutsche Personennamen vortrainiert, hat aber bei sehr kurzen oder seltenen Vornamen Recall-Lücken.
 - **Formate:** Plain-Text plus format-aware Verarbeitung für `.eml`, `.msg`, Markdown und XML/HTML (siehe Tabelle oben).
 Outlook-`.msg`-Dateien geben keinen byte-faithful Round-Trip zurück - nur den pseudonymisierten Body als Plain-Text, weil das compound-document Re-Roundtrippen nicht das Ziel ist.
 Anhänge in `.msg` werden nicht angefasst.
