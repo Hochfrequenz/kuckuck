@@ -124,7 +124,7 @@ pip install "kuckuck[cli,ner]"
 
 ### Als Standalone-Binary
 
-Lade dir die plattformspezifische Binary von der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases).
+Lade dir die plattformspezifische Binary von der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases/latest).
 Es gibt jeweils zwei Varianten:
 
 | Variante | Dateiname | Größe | NER (`--ner`) |
