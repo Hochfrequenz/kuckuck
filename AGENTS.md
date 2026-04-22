@@ -30,6 +30,9 @@ Du darfst bei der Analyse annehmen, dass `[[HANDLE_abc]]` mit gleichem Suffix in
 2. Niemals `*.kuckuck-map.enc` oder `.kuckuck-key` committen — beide sind in `.gitignore`.
 3. Tokens in deinen Antworten **nicht** auflösen.
    Der Mensch führt den Restore-Schritt lokal aus.
+4. **In Claude Code: für `.eml`/`.msg` immer `Read` benutzen, niemals `Bash cat foo.eml`** (oder `head`, `grep`, Pipelines).
+   Der PreToolUse-Hook (`integrations/claude-code/kuckuck-pseudo.sh`) fängt nur native Tools (`Read`, `Edit`, `Grep`) ab, weil `Bash`-Kommandos keinen zuverlässig extrahierbaren Dateipfad haben (`cat $(find …)`, Subshells, Pipelines).
+   Wer über `Bash cat` liest, umgeht die Pseudonymisierung - das ist eine dokumentierte Hook-Grenze, kein Feature.
 
 ## Konventionen für Code-Änderungen in diesem Repo
 
