@@ -76,10 +76,15 @@ if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
 
 # kuckuck is idempotent: already-pseudonymized tokens survive a second
 # pass unchanged, so we can run it on every matching tool call without
-# tracking state. Stdout is merged into stderr to keep the progress line
-# out of the hook-specific stdout channel (which Claude Code may try to
-# parse as JSON).
-& $kuckuckCmd.Source run $file *>&2
+# tracking state. kuckuck's stdout and stderr are both piped to our own
+# stderr so nothing lands on the hook-specific stdout channel (which
+# Claude Code may try to parse as JSON).
+#
+# PowerShell does not let you redirect stdout directly to stderr with
+# '*>&2' the way bash's '1>&2' does - the native operator only merges
+# streams TO stdout. So we do it the long way: merge all streams to the
+# success stream via '2>&1', iterate, and write each line to stderr.
+& $kuckuckCmd.Source run $file 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
 $rc = $LASTEXITCODE
 
 if ($rc -eq 0) {
