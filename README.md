@@ -125,15 +125,18 @@ pip install "kuckuck[cli,ner]"
 ### Als Standalone-Binary
 
 Lade dir die plattformspezifische Binary von der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases/latest).
-Es gibt jeweils zwei Varianten:
+Es gibt vier Varianten je Plattform — zwei reine CLI-Varianten und zwei MCP-Server-Varianten:
 
-| Variante | Dateiname | Größe | NER (`--ner`) |
-|---|---|---|---|
-| Slim (Default) | `kuckuck_windows_<version>.exe`, `kuckuck_macos_arm64_<version>` | ~ 30 MB | nicht verfügbar |
-| NER | `kuckuck_windows_ner_<version>.exe`, `kuckuck_macos_arm64_ner_<version>` | ~ 300 MB | verfügbar |
+| Variante | Dateiname | Größe | CLI | MCP-Server | NER |
+|---|---|---|---|---|---|
+| CLI Slim | `kuckuck_windows_<ver>.exe`, `kuckuck_macos_arm64_<ver>` | ~ 30 MB | ja | nein | nein |
+| CLI NER | `kuckuck_windows_ner_<ver>.exe`, `kuckuck_macos_arm64_ner_<ver>` | ~ 300 MB | ja | nein | ja |
+| MCP Slim | `kuckuck-mcp_windows_<ver>.exe`, `kuckuck-mcp_macos_arm64_<ver>` | ~ 43 MB | nein | ja | nein |
+| MCP NER (empfohlen für Coding-Assistenten) | `kuckuck-mcp_windows_ner_<ver>.exe`, `kuckuck-mcp_macos_arm64_ner_<ver>` | ~ 305 MB | nein | ja | ja |
 
-Die Slim-Variante reicht für Regex-basierte Erkennung (E-Mail, Telefon, Handles, Denylist).
-Die NER-Variante bringt zusätzlich gliner + CPU-only torch mit, sodass `kuckuck --ner` und `kuckuck fetch-model` direkt aus dem Binary funktionieren.
+Die CLI-Varianten startest du mit `kuckuck <file>`; sie enthalten keinen MCP-Server.
+Die MCP-Varianten sind stdio-Server für MCP-Clients (Claude Desktop, Claude Code, Cursor, opencode) — siehe [`integrations/mcp/README.md`](integrations/mcp/README.md) für die Setup-Anleitung pro Client.
+Die `_ner`-Varianten bringen zusätzlich gliner + CPU-only torch mit, sodass die PERSON-Namen-Erkennung ohne separaten Python-Install funktioniert (Modell wird einmalig via `kuckuck fetch-model` bzw. das `kuckuck_fetch_model` MCP-Tool nachgeladen).
 
 Nach dem Download umbenennen (optional) und Quarantäne-Attribut entfernen:
 
