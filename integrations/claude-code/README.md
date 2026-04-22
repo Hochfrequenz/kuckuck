@@ -1,96 +1,175 @@
-# Kuckuck PreToolUse-Hook für Claude Code
+# Kuckuck-Hook für Claude Code
 
-Claude Code kennt ein Hook-System, das Skripte vor jedem Tool-Call ausführen kann ([offizielle Doku](https://code.claude.com/docs/en/hooks)).
-Dieser Hook fängt `Read`, `Edit` und `Grep` auf `*.eml`- und `*.msg`-Dateien ab und jagt sie durch Kuckuck, bevor Claude den Inhalt zu Gesicht bekommt.
+## Was dieses Dokument beantwortet
 
-Das ist die **Defense-in-Depth-Ebene hinter dem [MCP-Server](../mcp/README.md)**.
-Der MCP-Server bietet das aktive `kuckuck_pseudonymize`-Tool; der Hook hier sorgt dafür, dass auch ein direkter `Read(foo.eml)` nicht am Schutz vorbeikommt.
-Beides zusammen heißt: das Modell kann den Schutz weder vergessen (Hook blockt direkten Read) noch umgehen (Hook erzwingt den MCP-Pfad als Remediation).
+- Was ist ein Claude-Code-Hook und was tut dieser hier?
+- Wie installiere ich ihn in drei Befehlen?
+- Woran erkenne ich, dass er wirkt?
+- Was mache ich, wenn er streikt?
 
-## Installation
+## Was der Hook tut (in einem Satz)
 
-Einmalig in deinem Projekt:
+Bevor Claude Code eine `.eml`- oder `.msg`-Datei mit `Read`, `Edit` oder `Grep` anfasst, läuft die Datei durch `kuckuck run`. Klartext-Adressen, Namen und Telefonnummern sind danach durch `[[EMAIL_…]]`, `[[PERSON_…]]`, `[[PHONE_…]]` ersetzt. Claude sieht nur den pseudonymisierten Inhalt.
+
+## Warum das zusätzlich zum MCP-Server nötig ist
+
+Der [MCP-Server](../mcp/README.md) stellt Claude das aktive Tool `kuckuck_pseudonymize` zur Verfügung. Damit das schützt, muss das Modell aber daran denken, das Tool *aufzurufen*. Wenn Claude stattdessen einfach `Read mail.eml` aufruft, war es das. Der Hook hier ist die passive Absicherung: er läuft *immer*, auch wenn das Modell nicht darüber nachdenkt. Die beiden Integrationen zusammen heißen Defense-in-Depth - ein Schutz soll weder vergessen (Hook greift) noch umgehen (MCP-Remediation im Fehlerfall) werden können.
+
+Der Hook ist **Claude-Code-spezifisch**. Andere Clients (Cursor, Cline, Zed, opencode, Claude Desktop) haben kein äquivalentes Hook-System; dort trägt nur der MCP-Server.
+
+## Quick-Start (3 Minuten)
+
+Voraussetzung: du hast ein Kuckuck-Projekt mit `.kuckuck-key` oder eine user-globale Key-Datei. Wenn nicht, erst `kuckuck init-key --project` in deinem Projekt laufen lassen.
 
 ```bash
-pip install "kuckuck[cli]"      # braucht man eh, wenn man Kuckuck-CLI nutzt
-apt install jq                  # bzw. 'brew install jq' auf macOS
-kuckuck install-claude-hook     # projekt-lokal in .claude/
+pip install "kuckuck[cli]"          # falls noch nicht geschehen
+sudo apt install jq                 # Linux;   macOS: 'brew install jq'; Windows: 'winget install jqlang.jq'
+cd /pfad/zu/deinem/projekt
+kuckuck install-claude-hook
 ```
 
-`kuckuck install-claude-hook` legt das Shell-Script unter `.claude/hooks/kuckuck-pseudo.sh` (bzw. `.ps1` unter Windows) ab und schreibt einen idempotenten Merge-Eintrag in `.claude/settings.json`.
-Bestehende Hooks in `settings.json` werden nicht überschrieben; ein zweiter Aufruf von `install-claude-hook` ist ein No-Op.
+Erwartete Ausgabe:
 
-Globale Installation (lauft in *jedem* Projekt):
+```
+Wrote hook script: /pfad/zu/deinem/projekt/.claude/hooks/kuckuck-pseudo.sh
+Updated settings: /pfad/zu/deinem/projekt/.claude/settings.json
+Restart Claude Code or run /hooks to reload the settings.
+```
+
+Was der Befehl gemacht hat:
+
+- `.claude/hooks/kuckuck-pseudo.sh` (bzw. `.ps1` auf Windows) angelegt.
+  Das ist das Shell-Script, das vor jedem Read/Edit/Grep auf `*.eml`/`*.msg` läuft.
+- `.claude/settings.json` um einen `PreToolUse`-Hook-Eintrag erweitert.
+  Bestehende Hooks bleiben intakt; ein zweiter Aufruf ist ein No-Op.
+
+Starte Claude Code jetzt neu (oder tippe `/hooks` im Chat, um die Settings ohne Neustart neu zu lesen).
+
+## Überprüfen, dass es wirkt
+
+1. Lege eine Testdatei an:
+
+   ```bash
+   cat > test.eml <<'EOF'
+   From: Alice <alice@example.com>
+   To: Bob <bob@example.com>
+   Subject: Test
+
+   Kontakt: klaus.mueller@firma.de, Telefon +49 40 12345-678.
+   EOF
+   ```
+
+2. Frag Claude Code im Chat: `Kannst du test.eml lesen?`.
+
+3. Was du erwarten solltest:
+
+   - Claude Code zeigt dir den Inhalt **mit Tokens statt Klartext**:
+
+     ```
+     From: Alice <[[EMAIL_a7f3…]]>
+     ...
+     Kontakt: [[EMAIL_b1e2…]], Telefon [[PHONE_c3d4…]].
+     ```
+
+   - Im Projekt-Verzeichnis liegt jetzt `test.eml.kuckuck-map.enc` (verschlüsseltes Mapping für den Restore).
+
+   - Im Claude-Code-Terminal (nicht im Chat) siehst du eine Zeile wie
+
+     ```
+     test.eml -> test.eml (3 replacements, format: eml, map: test.eml.kuckuck-map.enc)
+     ```
+
+     Das ist die Fortschrittsausgabe von `kuckuck run`, über stderr an Claude Codes Konsole weitergereicht.
+
+4. Zum Aufräumen:
+
+   ```bash
+   kuckuck restore test.eml
+   rm test.eml.kuckuck-map.enc
+   rm test.eml
+   ```
+
+Wenn dein Chat die Tokens `[[EMAIL_…]]` enthält und die Sidecar-Datei da ist, wirkt der Hook wie beabsichtigt.
+
+## Häufige Probleme beim ersten Versuch
+
+### Claude zeigt trotzdem Klartext
+
+Wahrscheinlich ist der Hook gar nicht gelaufen. Prüfe drei Dinge:
+
+```bash
+# Claude Code hat die Settings geladen?
+cat .claude/settings.json | grep kuckuck-pseudo
+# Hook-Script ist ausführbar?
+ls -la .claude/hooks/kuckuck-pseudo.sh
+# kuckuck und jq sind im PATH, aus dem Claude Code läuft?
+command -v kuckuck && command -v jq
+```
+
+Startest du Claude Code aus einer anderen Shell (ohne die Projekt-venv), sieht es weder `kuckuck` noch `jq`. Lösungen:
+
+- Starte Claude Code aus derselben Shell, in der `pip install kuckuck[cli]` gelaufen ist.
+- Oder installiere Kuckuck systemweit: `pipx install kuckuck[cli]`.
+
+Wenn Claude Code schon lief, als du den Hook installiert hast: Neustart oder `/hooks` im Chat, damit die Settings neu geladen werden.
+
+### `[kuckuck-hook] kuckuck not found in PATH`
+
+Die Shell, aus der Claude Code den Hook startet, hat `kuckuck` nicht gefunden. Siehe oben.
+
+### `[kuckuck-hook] jq not found in PATH`
+
+`sudo apt install jq` (Linux), `brew install jq` (macOS), `winget install jqlang.jq` (Windows). Dann Claude Code neustarten.
+
+### `[kuckuck-hook] Refusing to Read … (kuckuck exit 3)`
+
+Kein `.kuckuck-key` gefunden. Einmalig:
+
+```bash
+kuckuck init-key --project      # legt .kuckuck-key im Projekt an
+# oder
+kuckuck init-key                # legt ~/.config/kuckuck/key an (gilt für alle Projekte)
+```
+
+### Der Hook blockiert, obwohl gerade nichts zu pseudonymisieren wäre
+
+Der Hook ist bewusst **fail-closed**: im Zweifel blockt er. Wenn du den Schutz für eine Debug-Session abschalten willst, starte Claude Code mit:
+
+```bash
+KUCKUCK_HOOK_FAIL_OPEN=1 claude
+```
+
+Der Hook läuft dann weiter, gibt aber auf stderr `UNSAFE` aus, sobald er in den Fail-Open-Pfad fällt. **Nicht** für Produktions-Sessions gedacht.
+
+## Deinstallation
+
+```bash
+kuckuck install-claude-hook --uninstall
+```
+
+Das entfernt den Hook-Eintrag aus `.claude/settings.json` und löscht das Shell-Script. Andere Hooks, die du selbst eingetragen hast, bleiben unberührt.
+
+Für die globale Variante:
+
+```bash
+kuckuck install-claude-hook --uninstall --global
+```
+
+## Globale Installation (für Fortgeschrittene)
+
+Wenn du den Hook in **jedem** Projekt auf deinem Rechner automatisch aktiv haben willst:
 
 ```bash
 kuckuck install-claude-hook --global
 ```
 
-Global ist nur sinnvoll, wenn alle deine Projekte denselben `.kuckuck-key` haben - sonst blockt der Hook fail-closed alle `Read`-Aufrufe auf `.eml`/`.msg` in Key-freien Projekten.
-Das CLI-Kommando warnt dich entsprechend.
+Das schreibt den Eintrag in `~/.claude/settings.json` statt ins Projekt. Vorsicht: der Hook ist **fail-closed**. In Projekten ohne `.kuckuck-key` schlägt jeder `Read(*.eml)` fehl, bis du entweder einen Projekt-Key anlegst oder eine user-globale Key-Datei (`kuckuck init-key`) hast.
 
-Zum Entfernen:
+Der CLI-Befehl warnt dich auf stderr, wenn du `--global` verwendest.
 
-```bash
-kuckuck install-claude-hook --uninstall
-kuckuck install-claude-hook --uninstall --global
-```
+## Was genau in `.claude/settings.json` landet
 
-Das Script wird gelöscht, der `settings.json`-Eintrag entfernt.
-Andere Hooks bleiben erhalten.
-
-## Was der Hook macht
-
-Der Hook filtert via permission-rule `if`-Ausdruck:
-
-```
-Read(*.eml) | Read(*.msg) | Edit(*.eml) | Edit(*.msg) | Grep(*.eml) | Grep(*.msg)
-```
-
-Für alle anderen Tool-Calls ist der Hook **komplett ausgeblendet** - Claude Code ruft das Script gar nicht erst auf.
-
-Matched einer dieser Aufrufe, passiert folgendes:
-
-1. Pre-flight: `kuckuck` und `jq` müssen auf `PATH` sein.
-   Fehlt eins von beiden, exit 2 mit konkretem Install-Hinweis (fail-closed).
-2. Stdin-JSON parsen, Dateipfad aus `.tool_input.file_path` (Read/Edit) oder `.tool_input.path` (Grep) ziehen.
-3. `kuckuck run <file>` laufen lassen.
-   Kuckuck ist idempotent - bereits pseudonymisierte Tokens bleiben unverändert, ein zweiter Lauf ist nur teuer, nicht falsch.
-4. Erfolg → exit 0, der Tool-Call läuft weiter gegen die jetzt pseudonymisierte Datei.
-5. Fehler (z. B. fehlender Key) → exit 2, der Tool-Call wird **blockiert**.
-   Auf stderr landet eine Remediation-Meldung, die auf das `kuckuck_pseudonymize` MCP-Tool verweist.
-
-## Key-Lookup
-
-Der Hook ruft `kuckuck run <file>` auf, also gilt der normale Kuckuck-Key-Lookup:
-
-1. Env-Variable `KUCKUCK_KEY_FILE`
-2. `$PWD/.kuckuck-key` (Projekt-lokal)
-3. `~/.config/kuckuck/key` (User-global)
-
-Kein Key → `kuckuck run` wirft `KeyNotFoundError` → Hook blockt fail-closed.
-Lösung: `kuckuck init-key --project` (projekt-lokal) oder `kuckuck init-key` (user-global).
-
-## Fail-Closed und der `KUCKUCK_HOOK_FAIL_OPEN`-Override
-
-Default-Verhalten: **fail-closed**.
-Wenn irgendwas schiefgeht - fehlendes `kuckuck`, fehlendes `jq`, fehlender Key, Parse-Fehler, Disk-voll - blockt der Hook den Tool-Call und gibt auf stderr eine Meldung aus.
-
-Für lokales Triage oder Debug-Szenarien gibt es einen expliziten Escape-Hatch:
-
-```bash
-export KUCKUCK_HOOK_FAIL_OPEN=1
-```
-
-Setzt du die Env-Variable, lässt der Hook fehlerhafte Läufe **durchlaufen** (exit 0) statt zu blocken.
-Auf stderr steht dann `UNSAFE` und der Original-Fehler, damit du das Szenario nicht übersiehst.
-Diese Flag ist ausdrücklich **nicht** für Produktions-Shells gedacht - sie hebelt den Schutz aus.
-
-## Konfiguration pro Scope
-
-Die Install-Varianten, falls du die Datei von Hand pflegen willst:
-
-### Projekt-lokal (`.claude/settings.json`)
+`kuckuck install-claude-hook` schreibt (projekt-lokal):
 
 ```json
 {
@@ -111,68 +190,44 @@ Die Install-Varianten, falls du die Datei von Hand pflegen willst:
 }
 ```
 
-Siehe `settings.example.json` in diesem Ordner.
+Zum Nachlesen, was die Felder bedeuten: [Offizielle Claude-Code-Hooks-Doku](https://code.claude.com/docs/en/hooks).
 
-### Global (`~/.claude/settings.json`)
+Kurzfassung:
 
-Selber Block, aber mit absolutem Pfad statt `$CLAUDE_PROJECT_DIR`:
+- `matcher: "Read|Edit|Grep"` - nur für diese drei Tools prüfen.
+- `if: "Read(*.eml) | ..."` - innerhalb dieser drei Tools: nur feuern, wenn der Pfad zu den Glob-Mustern passt. Für jeden anderen Tool-Call ist der Hook unsichtbar.
+- `command` - das Script, das bei einem Match vor dem Tool-Call aufgerufen wird.
+- `$CLAUDE_PROJECT_DIR` - von Claude Code gesetzte Umgebungsvariable, zeigt auf dein Projekt-Root. Dadurch ist die `settings.json` commit-safe.
 
-```json
-"command": "/home/you/.claude/hooks/kuckuck-pseudo.sh"
-```
+Wenn du lieber selbst Hand anlegst statt `install-claude-hook` zu nutzen: siehe `settings.example.json` in diesem Ordner.
 
-### Windows
+## Windows-Besonderheiten
 
-Auf Native-Windows (kein WSL) installiert der CLI-Subcommand automatisch die `.ps1`-Variante und prefixt den `command`-String mit `powershell -NoProfile -ExecutionPolicy Bypass -File …`, damit Claude Codes Hook-Executor das Script auch ohne file-association findet.
+Auf native Windows (ohne WSL) installiert `kuckuck install-claude-hook` automatisch die `.ps1`-Variante statt der `.sh`. Der `command`-Eintrag in `settings.json` ruft `powershell -NoProfile -ExecutionPolicy Bypass -File …` auf, damit das Script unabhängig von File-Associations läuft. Du brauchst dafür kein zusätzliches Tooling.
 
-## Verifikation
+`jq` ist auf Windows ebenfalls erforderlich; `winget install jqlang.jq` oder direkt von [github.com/jqlang/jq/releases](https://github.com/jqlang/jq/releases).
 
-1. `.eml`-Testdatei im Projekt anlegen:
-   ```bash
-   cat > test.eml <<'EOF'
-   From: Alice <alice@example.com>
-   To: Bob <bob@example.com>
+## Schritt-für-Schritt: was passiert bei einem `Read(mail.eml)`
 
-   Kontakt: klaus.mueller@firma.de, +49 40 12345-678
-   EOF
-   ```
-2. Claude Code öffnen und im Chat: `Read test.eml`.
-3. Erwartetes Verhalten:
-   - Claude Code zeigt `test.eml` mit `[[EMAIL_…]]`-Tokens statt `klaus.mueller@firma.de`.
-   - `test.eml.kuckuck-map.enc` liegt jetzt daneben (verschlüsseltes Mapping).
-   - Auf dem Terminal steht eine Zeile wie `test.eml -> test.eml (3 replacements, …)`.
-4. Zum Aufräumen: `kuckuck restore test.eml` und `rm test.eml test.eml.kuckuck-map.enc`.
+1. Claude Code stellt fest: Read-Tool, Pfad `mail.eml`, passt auf `Read(*.eml)`.
+2. Claude Code spawnt das Hook-Script mit einer JSON-Payload auf stdin, die den Pfad enthält.
+3. Das Script prüft, dass `kuckuck` und `jq` installiert sind.
+4. Es extrahiert den Pfad aus `stdin.tool_input.file_path`.
+5. Es ruft `kuckuck run mail.eml` auf.
+6. Entweder:
+   - **Erfolg**: `mail.eml` ist jetzt in-place pseudonymisiert. Script exit 0. Claude Code führt `Read mail.eml` aus und sieht den pseudonymisierten Inhalt.
+   - **Fehler** (z. B. kein Key, jq fehlt, kuckuck nicht im PATH): Script exit 2. Claude Code **blockiert** den Tool-Call und zeigt dem Modell die stderr-Ausgabe des Scripts. Die enthält den Hinweis, stattdessen `kuckuck_pseudonymize` über MCP aufzurufen - so lernt Claude den richtigen Workflow statt nur ein "nein" zu sehen.
 
-Hook läuft nicht?
-Prüfe `kuckuck`/`jq` in der Shell, aus der du Claude Code startest (Claude Code erbt den `PATH` dieser Shell):
+## Grenzen und bewusste Entscheidungen
 
-```bash
-command -v kuckuck && command -v jq
-```
-
-Fehlt eins, installier es und starte Claude Code neu.
-
-## Troubleshooting
-
-**`[kuckuck-hook] kuckuck not found in PATH`**: Claude Code startet nicht aus der Shell, in der du `pip install kuckuck[cli]` gemacht hast, oder du hast das Script in einer venv installiert, die bei Claude Codes Subprocess nicht aktiv ist.
-Lösung: starte Claude Code aus derselben Shell (bzw. mit aktivierter venv), oder installiere Kuckuck system-weit.
-
-**`[kuckuck-hook] jq not found in PATH`**: `apt install jq` / `brew install jq` / `winget install jqlang.jq`, dann Claude Code neustarten.
-
-**`[kuckuck-hook] Refusing to Read … (kuckuck exit 3)`**: kein `.kuckuck-key` gefunden.
-Einmalig `kuckuck init-key --project` (projekt-lokal) oder `kuckuck init-key` (user-global).
-
-**Hook läuft, aber Claude sieht die Datei weiterhin im Klartext**: cache-Problem?
-Nach einem `Read` pseudonymisiert der Hook die Datei; Claude Codes Dateiansicht zeigt aber evtl. einen zwischengespeicherten Vorzustand, bis der Chat-Turn abgeschlossen ist.
-Im Zweifel: `/mcp` → `kuckuck_status` laufen lassen, dann neu lesen.
-
-**`Bash cat foo.eml` umgeht den Hook**: ja, by design - Claude-Code-Hooks haben keinen zuverlässigen Dateipfad-Extrahierungspunkt in `Bash`-Kommandos (`cat $(find …)`, `head -n 20 …`, Pipelines, Subshells, …).
-Die [`AGENTS.md`](../../AGENTS.md) weist Claude an, für `.eml`/`.msg`-Dateien immer `Read` statt `Bash cat` zu nutzen.
-Wer das aktiv umgehen will, kann das; der Hook ist Defense-in-Depth, kein Sandbox-Entkommen-Stopper.
+- **`Bash cat foo.eml` umgeht den Hook.** Claude-Code-Hooks können keinen zuverlässigen Dateipfad aus einem beliebigen Shell-Command extrahieren (`cat $(find …)`, Subshells, Pipelines). Der Hook fängt nur die drei nativen Tools ab. Die [`AGENTS.md`](../../AGENTS.md) weist Claude an, für `.eml`/`.msg` immer `Read` zu verwenden. Wer das aktiv umgehen will, kann das; der Hook ist Defense-in-Depth, kein Sandbox-Entkommen-Stopper.
+- **MCP-Tools anderer Server werden nicht abgefangen.** Der `if`-Filter kennt nur Claude Codes native Tools. Wenn ein anderer MCP-Server eine Datei-Lese-Funktion exportiert, läuft die am Hook vorbei. Deshalb ist `kuckuck-mcp` selbst auf `file_path`-Argumente (nicht `text`-Argumente) festgelegt.
+- **`.pst` wird nicht unterstützt.** Kuckuck kennt `.eml`, `.msg`, `.md`, `.xml`, `.html`, Plain-Text. Exchange-Postfächer musst du zuerst in `.eml`-Dateien extrahieren.
+- **In-place-Modifikation.** Nach dem Hook ist die Originaldatei pseudonymisiert. `kuckuck restore <file>` ist der Weg zurück. Das ist beabsichtigt - der pseudonymisierte Zustand IST der gewünschte Arbeitszustand.
+- **Hook-Timeout 60 s (Claude-Code-Default).** Sehr große `.eml` (>50 MB) können reinlaufen; die CI deckt bis 10 MB ab.
+- **Symlinks werden verfolgt.** Ein symbolischer Link `brief.eml -> /etc/passwd` würde dazu führen, dass der Hook die Zieldatei pseudonymisiert (falls du Schreibrechte hast). In der Praxis fällt das nicht zufällig vor; wenn du Symlinks im Projekt hast, die auf sensible Dateien zeigen, lass den Hook weg oder prüfe deine Projekt-Struktur.
 
 ## Verhältnis zum MCP-Server
-
-Beide Integrationen lösen verschiedene Angles:
 
 | | [MCP-Server](../mcp/README.md) | Hook (dieses Dokument) |
 |---|---|---|
@@ -181,20 +236,4 @@ Beide Integrationen lösen verschiedene Angles:
 | Nutzer-Rolle | Modell muss sich erinnern, das MCP-Tool zu nutzen | passiv, Nutzer muss nichts tun |
 | Schutz gegen | bewusst-konventionelle Pseudonymisierung | Vergesslichkeit + direkte Reads ohne Konvention |
 
-Best-Practice: **beide parallel installieren**.
-MCP-Server als Primär-Schnittstelle (Claude lernt via Prompts wie `setup_kuckuck`, dass es `kuckuck_pseudonymize` nutzen soll), Hook als Safety-Net, falls das Modell den Umweg über MCP vergisst.
-
-## Grenzen
-
-- **`Bash` wird nicht abgefangen**.
-  `cat`, `head`, `grep`, Pipelines ohne explizites `file_path`-Argument bleiben unberührt.
-- **MCP-Tools, die Dateien lesen, werden nicht abgefangen**.
-  Der `if`-Filter kennt nur Claude Codes native Tools; der Hook kann nicht MCP-Calls inspizieren.
-  Das ist die zweite Rolle des MCP-Servers: sich selbst auf `file_path`-Argumente statt `text`-Argumente festlegen und damit nicht versehentlich Klartext durchreichen.
-- **Hook-Timeout** (Claude-Code-Default 60 s): sehr große `.eml` (>50 MB) können reinlaufen.
-  Die CI deckt bis 10 MB ab.
-- **`.pst` nicht unterstützt**.
-  Kuckuck kennt `.eml`, `.msg`, `.md`, `.xml`, `.html`, Plain-Text.
-- **In-place-Modifikation**.
-  Nach dem Hook ist die Originaldatei pseudonymisiert; `kuckuck restore <file>` ist der Weg zurück.
-  Das ist Absicht - der pseudonymisierte Zustand IST der gewünschte Arbeitszustand, kein Zwischenschritt.
+Best-Practice: **beide parallel installieren**. MCP-Server als Primär-Schnittstelle (Claude lernt via Prompts wie `setup_kuckuck`, dass es `kuckuck_pseudonymize` nutzen soll), Hook als Safety-Net, falls das Modell den Umweg über MCP vergisst.
