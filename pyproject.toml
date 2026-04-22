@@ -43,6 +43,16 @@ dynamic = ["readme", "version"]
 cli = [
     "typer>=0.15"
 ]
+# GLiNER-based PERSON detector. Opt-in: pulls torch (~ 250 MB CPU-only,
+# ~ 3 GB GPU-default) and requires the model snapshot fetched via
+# 'kuckuck fetch-model' before use. onnxruntime is imported unconditionally
+# by gliner.model, so it is part of the runtime dependency set even when we
+# load weights from PyTorch (.bin / .safetensors).
+ner = [
+    "gliner>=0.2.20",
+    "huggingface-hub>=0.20",
+    "onnxruntime>=1.18"
+]
 tests = [
     "pytest==9.0.3",
     "syrupy==5.1.0",
@@ -105,7 +115,13 @@ disable = [
 ]
 
 [tool.pytest.ini_options]
-markers = ["snapshot: mark a test as a snapshot test"]
+markers = [
+    "snapshot: mark a test as a snapshot test",
+    "ner: integration tests that load the real GLiNER model (slow, opt-in via -m ner)"
+]
+# NER integration tests are deselected by default. CI opts in by adding
+# `-m "ner"` to the pytest invocation in the dedicated NER job.
+addopts = "-m 'not ner'"
 
 [tool.mypy]
 disable_error_code = []

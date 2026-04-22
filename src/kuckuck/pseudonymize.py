@@ -12,6 +12,13 @@ from kuckuck.detectors.base import Detector, EntityType, Span
 from kuckuck.detectors.denylist import DenylistDetector
 from kuckuck.detectors.email import EmailDetector
 from kuckuck.detectors.handle import HandleDetector
+from kuckuck.detectors.ner import (
+    NerDetector,
+    NerModelMissingError,
+    NerNotInstalledError,
+    is_gliner_installed,
+    is_model_available,
+)
 from kuckuck.detectors.phone import PhoneDetector
 from kuckuck.detectors.resolver import resolve_spans
 from kuckuck.mapping import Mapping, MappingEntry
@@ -26,8 +33,24 @@ TOKEN_TEMPLATE = "[[{entity}_{token}]]"
 _OWN_TOKEN_RE = re.compile(r"\[\[(?P<entity>[A-Z]+)_(?P<token>[a-z0-9]+(?:-\d+)?)\]\]")
 
 
-def build_default_detectors(*, denylist: list[str] | None = None, phone_region: str = "DE") -> list[Detector]:
-    """Return the built-in detector set for the MVP regex pipeline."""
+logger = logging.getLogger(__name__)
+
+
+def build_default_detectors(
+    *,
+    denylist: list[str] | None = None,
+    phone_region: str = "DE",
+    use_ner: bool = False,
+) -> list[Detector]:
+    """Return the built-in detector set for the regex pipeline.
+
+    With *use_ner* set the GLiNER-backed :class:`NerDetector` is appended
+    when both the optional ``gliner`` package and the on-disk model are
+    available. If either is missing this function logs a warning and
+    skips the NER detector — it never raises. CLI callers that want a
+    hard failure check :func:`is_gliner_installed` and
+    :func:`is_model_available` themselves before invoking this function.
+    """
     detectors: list[Detector] = [
         EmailDetector(),
         PhoneDetector(default_region=phone_region),
@@ -35,10 +58,23 @@ def build_default_detectors(*, denylist: list[str] | None = None, phone_region: 
     ]
     if denylist:
         detectors.append(DenylistDetector(denylist))
+    if use_ner:
+        if not is_gliner_installed():
+            logger.warning(
+                "NER requested but the optional 'gliner' package is not installed; "
+                "skipping. Install it via: pip install 'kuckuck[ner]'"
+            )
+        elif not is_model_available():
+            logger.warning(
+                "NER requested but the GLiNER model is not present locally; "
+                "skipping. Run 'kuckuck fetch-model' to download it."
+            )
+        else:
+            try:
+                detectors.append(NerDetector())
+            except (NerModelMissingError, NerNotInstalledError) as exc:
+                logger.warning("NER detector unavailable: %s", exc)
     return detectors
-
-
-logger = logging.getLogger(__name__)
 
 
 class PseudonymizeResult(BaseModel):
