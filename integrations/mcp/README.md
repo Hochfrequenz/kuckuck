@@ -181,8 +181,16 @@ Der Server-Subprocess erbt das Working-Directory des Clients, das ist meistens *
 Claude Desktop und Claude Code unterstützen Elicitation; opencode hatte sie zum Zeitpunkt der Spec-Implementierung noch nicht überall ausgerollt.
 Workaround bis dann: nutze `kuckuck restore <file>` lokal in der CLI.
 
-## Wenn du den Hook (#9) auch installierst
+## Wenn du den Hook auch installierst
 
 Der MCP-Server bietet die aktive Schnittstelle ("Modell ruft `kuckuck_pseudonymize` auf").
-Issue [#9](https://github.com/Hochfrequenz/kuckuck/issues/9) ergänzt einen passiven PreToolUse-Hook für Claude Code, der `Read(*.eml)` blockt und auf `kuckuck_pseudonymize` verweist.
+Ergänzend gibt es einen passiven PreToolUse-Hook für Claude Code, der `Read(*.eml)` blockt und auf `kuckuck_pseudonymize` verweist - siehe [`integrations/claude-code/README.md`](../claude-code/README.md).
 Beides zusammen ist Defense-in-Depth: das Modell kann den Schutz weder vergessen (Hook fängt direkten Read) noch umgehen (Hook erzwingt den MCP-Pfad).
+
+Installation in einem bestehenden Projekt:
+
+```bash
+kuckuck install-claude-hook
+```
+
+Das Kommando legt das Shell-Script unter `.claude/hooks/kuckuck-pseudo.sh` (bzw. `.ps1` unter Windows) ab und merged den Eintrag idempotent in `.claude/settings.json`, ohne bestehende Hooks zu überschreiben.

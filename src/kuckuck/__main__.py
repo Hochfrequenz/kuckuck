@@ -33,6 +33,7 @@ import typer
 from cryptography.exceptions import InvalidTag
 from pydantic import SecretStr
 
+from kuckuck import install_hook
 from kuckuck.config import DEFAULT_KEY_PATH, PROJECT_KEY_NAME, KeyNotFoundError, init_key, load_key
 from kuckuck.detectors.ner import (
     DEFAULT_MODEL_ID,
@@ -54,7 +55,9 @@ app = typer.Typer(
 )
 
 #: Names of explicit subcommands — kept in sync with the ``@app.command`` registrations.
-_SUBCOMMANDS = frozenset({"init-key", "restore", "inspect", "list-detectors", "version", "run", "fetch-model"})
+_SUBCOMMANDS = frozenset(
+    {"init-key", "restore", "inspect", "list-detectors", "version", "run", "fetch-model", "install-claude-hook"}
+)
 
 #: Return codes used across the CLI. Stable so shell scripts can dispatch on them.
 EXIT_OK = 0
@@ -414,6 +417,79 @@ def _is_within(root: Path, candidate: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+@app.command("install-claude-hook")
+def cmd_install_claude_hook(
+    global_: bool = typer.Option(
+        False,
+        "--global",
+        "-g",
+        help="Install into ~/.claude/ (runs in every project) instead of the current project's .claude/.",
+    ),
+    uninstall: bool = typer.Option(
+        False,
+        "--uninstall",
+        help="Remove the Kuckuck hook (keeps other hooks in settings.json intact).",
+    ),
+) -> None:
+    """Install or remove the Claude Code PreToolUse hook for auto-pseudonymization.
+
+    The hook runs before Read / Edit / Grep and sends ``*.eml`` and ``*.msg``
+    files through ``kuckuck run`` first, so Claude Code never sees cleartext
+    PII. See ``integrations/claude-code/README.md`` for the full setup
+    including the MCP-server companion.
+    """
+    claude_dir = Path.home() / ".claude" if global_ else Path.cwd() / ".claude"
+
+    try:
+        if uninstall:
+            result = install_hook.uninstall(claude_dir)
+            _report_uninstall(result)
+            return
+
+        if global_:
+            typer.echo(
+                "Warning: --global installs the hook in ~/.claude/settings.json.\n"
+                "It will fire in every project you open with Claude Code. "
+                "In projects without a .kuckuck-key the hook is fail-closed, "
+                "so Read/Edit/Grep on .eml/.msg files will be blocked. "
+                "Prefer the project-local install (drop --global) unless you "
+                "know all your projects share a key.",
+                err=True,
+            )
+
+        result = install_hook.install(claude_dir, global_scope=global_)
+        _report_install(result)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(EXIT_USAGE) from exc
+    except OSError as exc:
+        typer.echo(f"Filesystem error while (un)installing hook: {exc}", err=True)
+        raise typer.Exit(EXIT_GENERIC) from exc
+
+
+def _report_install(result: install_hook.InstallResult) -> None:
+    if result.script_changed:
+        typer.echo(f"Wrote hook script: {result.script_path}")
+    else:
+        typer.echo(f"Hook script already current: {result.script_path}")
+    if result.settings_changed:
+        typer.echo(f"Updated settings: {result.settings_path}")
+    else:
+        typer.echo(f"Hook entry already present in {result.settings_path} (left untouched)")
+    typer.echo("Restart Claude Code or run /hooks to reload the settings.")
+
+
+def _report_uninstall(result: install_hook.InstallResult) -> None:
+    if result.script_changed:
+        typer.echo(f"Removed hook script: {result.script_path}")
+    else:
+        typer.echo(f"No hook script to remove at {result.script_path}")
+    if result.settings_changed:
+        typer.echo(f"Stripped hook entry from {result.settings_path}")
+    else:
+        typer.echo(f"No hook entry found in {result.settings_path}")
 
 
 @app.command("version")

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Claude Code PreToolUse hook** (Issue [#9](https://github.com/Hochfrequenz/kuckuck/issues/9)).
+  Shell (`integrations/claude-code/kuckuck-pseudo.sh`) and PowerShell (`integrations/claude-code/kuckuck-pseudo.ps1`) scripts that auto-pseudonymize `.eml` and `.msg` files before every `Read` / `Edit` / `Grep`.
+  Default is fail-closed: missing `kuckuck`, missing `jq` (POSIX) or a failing run blocks the tool call.
+  The escape hatch `KUCKUCK_HOOK_FAIL_OPEN=1` lets a run pass through for local triage (documented as UNSAFE).
+  Stderr block-message points at `kuckuck_pseudonymize` via the MCP server so Claude learns the right remediation path instead of a bare "no".
+  New CLI subcommand `kuckuck install-claude-hook` (with `--global` and `--uninstall`) copies the right script for the host OS into `.claude/hooks/` and merges the hook entry into `.claude/settings.json` idempotently without overwriting user hooks.
+  Setup guide and example settings in `integrations/claude-code/`.
 - **MCP server** `kuckuck-mcp` (Issue [#10](https://github.com/Hochfrequenz/kuckuck/issues/10)).
   Sub-package `src/kuckuck_mcp/`, optional extra `kuckuck[mcp]`, console-script `kuckuck-mcp`.
   Built on FastMCP `>= 3` (consistent with the Hochfrequenz MCP stack).

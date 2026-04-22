@@ -1,0 +1,17 @@
+{
+  "_comment": "Merge this block into .claude/settings.json (project-local, commit-safe) or ~/.claude/settings.json (global). After editing, restart Claude Code or run /hooks to reload. The 'if'-filter uses Claude Code permission-rule syntax and keeps the hook scoped to .eml/.msg files - every other Read/Edit/Grep passes straight through. Install the script itself with 'kuckuck install-claude-hook' (copies kuckuck-pseudo.sh or .ps1 into .claude/hooks/ and wires up this block idempotently).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Read(*.eml) | Read(*.msg) | Edit(*.eml) | Edit(*.msg) | Grep(*.eml) | Grep(*.msg)",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/kuckuck-pseudo.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
