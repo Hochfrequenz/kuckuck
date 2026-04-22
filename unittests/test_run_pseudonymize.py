@@ -87,3 +87,39 @@ def test_run_options_rejects_extra_fields() -> None:
     # Defensive: forbid extras so a typo doesn't silently no-op.
     with pytest.raises(Exception):
         RunOptions(definitely_not_a_field=True)  # type: ignore[call-arg]
+
+
+def test_run_pseudonymize_with_ner_raises_when_gliner_missing(
+    tmp_path: Path, key_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Library callers see a Pythonic NerNotInstalledError, not typer.Exit.
+    from kuckuck.detectors.ner import NerNotInstalledError
+
+    monkeypatch.setattr("kuckuck.runner.is_gliner_installed", lambda: False)
+    source = tmp_path / "doc.txt"
+    source.write_text("Hi max@firma.de", encoding="utf-8")
+    with pytest.raises(NerNotInstalledError):
+        run_pseudonymize([source], RunOptions(key_file=key_file, ner=True))
+
+
+def test_run_pseudonymize_with_ner_raises_when_model_missing(
+    tmp_path: Path, key_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kuckuck.detectors.ner import NerModelMissingError
+
+    monkeypatch.setattr("kuckuck.runner.is_gliner_installed", lambda: True)
+    monkeypatch.setattr("kuckuck.runner.is_model_available", lambda: False)
+    source = tmp_path / "doc.txt"
+    source.write_text("Hi max@firma.de", encoding="utf-8")
+    with pytest.raises(NerModelMissingError):
+        run_pseudonymize([source], RunOptions(key_file=key_file, ner=True))
+
+
+def test_run_pseudonymize_invalid_format_raises_value_error(
+    tmp_path: Path, key_file: Path
+) -> None:
+    source = tmp_path / "doc.txt"
+    source.write_text("Hi", encoding="utf-8")
+    # Library API surfaces unknown formats as ValueError, not typer.BadParameter.
+    with pytest.raises(ValueError, match="Unknown format"):
+        run_pseudonymize([source], RunOptions(key_file=key_file, format="weirdo"))

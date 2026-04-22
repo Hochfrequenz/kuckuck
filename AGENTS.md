@@ -88,9 +88,20 @@ Beim Anfassen kryptographie-naher Dateien (`crypto.py`, `mapping.py`, `config.py
   Wenn `cryptography` etwas hat, das benutzen.
 - Master-Keys nur als `SecretStr`, nie als `str`.
 - Subprocesses dürfen keine Env-Variablen mit Secrets erben (siehe `config.py`-Docstring).
-- XML-Parser brauchen `resolve_entities=False, no_network=True, load_dtd=False`.
-- HTML-Parser müssen `<script>`/`<style>` strippen, bevor sie `.text()` aufrufen.
 - Pickle-loadende Pfade brauchen ein explizites Opt-in-Flag (siehe `--allow-untrusted-model` in `cmd_fetch_model`).
+
+Beim Anfassen der Preprocessoren (`src/kuckuck/preprocessors/`):
+
+- Neue XML-Parser brauchen `resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False` (siehe `xml.py`).
+- Neue HTML-Parser müssen `<script>`/`<style>`/`<noscript>` strippen, bevor sie `.text()` aufrufen (siehe `eml.py:_html_to_text`).
+- Reassemble-Pfade müssen format-spezifische Strukturen (CDATA, Multipart-Boundaries, YAML-Frontmatter) erhalten - siehe Snapshot-Tests in `unittests/test_preprocessors.py`.
+
+Beim Anfassen der Library-API (`runner.py`, `options.py`):
+
+- `RunOptions` ist `extra='forbid'` - neue Felder explizit ergänzen, nicht via Subclass schmuggeln.
+- `run_pseudonymize` muss typer-frei bleiben, damit das `[cli]` Extra wirklich optional ist.
+- `progress_writer`-Callable kommt aus User-Land - keine Secrets, keine Klartexte hineingeben (Ausnahme: dry-run gibt bewusst den ganzen pseudonymisierten Text aus, das ist beabsichtigt und dokumentiert).
+- `output_dir`-Pfade kommen aus User-Land - kein blindes `mkdir` auf einer absoluten Pfadangabe ohne mindestens einen Sanity-Check, dass der Pfad nicht z. B. `/etc` ist.
 
 ## System-Prompt-Snippet für Cloud-LLMs
 

@@ -8,8 +8,10 @@ Die ersten beiden Punkte (PyPI Trusted Publisher, GitHub Environment) sind einma
 ### 1. GitHub-Environment `release` anlegen
 
 1. Im Repo unter **Settings → Environments → New environment**, Name `release`.
-2. Optional: Reviewer hinterlegen, die ein Release manuell freigeben müssen, bevor der Publish-Job läuft.
-3. Optional: Branch-Schutz so konfigurieren, dass nur Tags vom `main`-Branch deployen dürfen.
+2. **Pflicht: Deployment-Branch-Schutz konfigurieren.**
+   Unter **Deployment branches and tags → Selected branches and tags → Add deployment branch or tag rule** den Filter `v*` anlegen.
+   Ohne diesen Filter könnte ein beliebiger Branch / Tag gegen den Trusted Publisher publishen — Kuckuck soll nur signed Tags vom Format `v<version>` deployen.
+3. Optional: Reviewer hinterlegen, die ein Release manuell freigeben müssen, bevor der Publish-Job läuft.
 
 ### 2. PyPI Trusted Publisher konfigurieren
 
