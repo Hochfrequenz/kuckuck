@@ -13,6 +13,7 @@ typer wrapper lives in :mod:`kuckuck.__main__`.
 from __future__ import annotations
 
 import json
+import os
 import re
 import stat
 import sys
@@ -232,9 +233,48 @@ def _load_settings(path: Path) -> dict[str, Any]:
 
 
 def _write_settings(path: Path, data: dict[str, Any]) -> None:
+    """Write *data* to *path* atomically.
+
+    A plain ``path.write_text(...)`` truncates-then-writes; Ctrl-C or
+    an OOM between those two steps leaves the user with a half-written
+    ``settings.json`` - Claude Code then refuses to start and we have
+    trashed hooks the user may never have been aware of.
+
+    The fix is the POSIX write-then-rename pattern: write to a
+    sibling ``.tmp`` file, fsync it, and ``os.replace`` it into place.
+    ``os.replace`` is atomic on the same filesystem on both POSIX and
+    Windows (Python docs guarantee this). File permissions on the
+    original are carried over.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-    path.write_text(payload, encoding="utf-8")
+
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+            fh.flush()
+            # Force the bytes to disk so a crash after replace() still
+            # leaves a coherent file - not just an inode pointing at
+            # unflushed page cache.
+            os.fsync(fh.fileno())
+        if path.exists() and sys.platform != "win32":
+            # Preserve the pre-existing mode so we do not, e.g., suddenly
+            # expose a chmod 0600 settings.json as 0644.
+            try:
+                os.chmod(tmp_path, path.stat().st_mode & 0o777)
+            except OSError:
+                # Non-fatal: we still want to replace() even if chmod
+                # fails on exotic filesystems.
+                pass
+        os.replace(tmp_path, path)
+    except BaseException:
+        # Clean up the .tmp on any exception path - including KeyboardInterrupt.
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def install(claude_dir: Path, *, global_scope: bool) -> InstallResult:
