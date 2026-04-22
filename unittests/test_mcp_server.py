@@ -293,6 +293,68 @@ class TestPseudonymizeTool:
         assert outside.read_text(encoding="utf-8") == "Hi max@firma.de"
 
 
+class TestPseudonymizeWithRealNer:
+    """End-to-end check that the MCP `ner=True` path actually loads GLiNER.
+
+    Marked ``ner`` so it only runs in the dedicated CI job that has both
+    the gliner package installed and the model snapshot cached. In the
+    default test sweep these are skipped via ``-m 'not ner'``.
+
+    Without this class the MCP wrapping around the NER detector was
+    completely untested - existing NER tests (test_ner.py) exercise the
+    library API directly, not the FastMCP route. Calling
+    ``kuckuck_pseudonymize`` with ``ner=True`` could silently break
+    (e.g. detector list build, error wrapping) and CI would not notice.
+    """
+
+    @pytest.mark.ner
+    async def test_pseudonymize_with_ner_finds_person_in_eml(
+        self, mcp_client: KuckuckClient, tmp_path: Path
+    ) -> None:
+        # Skip if the NER environment isn't ready - the marker filters
+        # in CI but local runs without -m ner won't hit this path; we
+        # add an explicit check so a stray local invocation gives a
+        # clear skip reason instead of a model-loading crash.
+        from kuckuck.detectors.ner import is_gliner_installed, is_model_available
+
+        if not is_gliner_installed() or not is_model_available():
+            pytest.skip("gliner / model not available in this environment")
+
+        source = tmp_path / "signature.eml"
+        source.write_text(
+            "From: a@example.com\nSubject: hi\n\nMit freundlichen Gruessen\nHans Mueller\n",
+            encoding="utf-8",
+        )
+        result = await mcp_client.call_tool(
+            "kuckuck_pseudonymize",
+            arguments={"file_path": str(source), "ner": True, "format": "eml"},
+        )
+        assert "ok" in result.data
+        out = source.read_text(encoding="utf-8")
+        # NER should turn the cleartext name into a PERSON token. Allow
+        # the model some slack: at minimum 'Hans' must be gone (the
+        # model is allowed to grab 'Hans Mueller' or just 'Hans' alone).
+        assert "Hans" not in out, f"NER did not catch the name: {out!r}"
+        assert "[[PERSON_" in out
+
+    @pytest.mark.ner
+    async def test_pseudonymize_ner_without_gliner_returns_tool_error(
+        self, mcp_client: KuckuckClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Even in the NER CI job we want to verify the error wrapping:
+        # if a model calls ner=True on a system where gliner is missing,
+        # the MCP tool must surface a ToolError with the exact remediation
+        # hint, not a stack trace.
+        monkeypatch.setattr("kuckuck.runner.is_gliner_installed", lambda: False)
+        source = tmp_path / "doc.txt"
+        source.write_text("Hi Hans", encoding="utf-8")
+        with pytest.raises(ToolError, match="kuckuck\\[ner\\]"):
+            await mcp_client.call_tool(
+                "kuckuck_pseudonymize",
+                arguments={"file_path": str(source), "ner": True},
+            )
+
+
 class TestRestoreToolElicitation:
     @staticmethod
     def _setup_pseudonymized(tmp_path: Path) -> Path:
