@@ -77,7 +77,7 @@ if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
 # kuckuck is idempotent: already-pseudonymized tokens survive a second
 # pass unchanged, so we can run it on every matching tool call without
 # tracking state. Stdout is merged into stderr to keep the progress line
-# out of the hookspecific stdout channel (which Claude Code may try to
+# out of the hook-specific stdout channel (which Claude Code may try to
 # parse as JSON).
 & $kuckuckCmd.Source run $file *>&2
 $rc = $LASTEXITCODE

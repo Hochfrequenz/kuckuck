@@ -52,6 +52,15 @@ fi
 
 INPUT=$(cat)
 
+# Parse the payload once up front. If jq cannot parse it we are past the
+# point where a silent no-op is acceptable - otherwise a broken client
+# sending garbage would fail-open by virtue of every later selector
+# returning empty.
+if ! printf '%s' "$INPUT" | jq empty >/dev/null 2>&1; then
+    warn "failed to parse stdin as JSON (garbled payload or unexpected client)."
+    fail_closed_or_open
+fi
+
 TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // "the tool"')
 # Read and Edit pass the target as .tool_input.file_path; Grep uses
 # .tool_input.path. Fall through to empty when neither is set (e.g. a
@@ -72,12 +81,18 @@ fi
 # kuckuck is idempotent: already-pseudonymized tokens survive a second
 # pass unchanged, so we can run it on every matching tool call without
 # tracking state. Stdout is redirected to stderr to keep the progress
-# line out of the hookspecific stdout channel (which Claude Code may try
-# to parse as JSON).
-if kuckuck run "$FILE" 1>&2; then
+# line out of the hook-specific stdout channel (which Claude Code may
+# try to parse as JSON).
+#
+# We capture kuckuck's exit status via $? on the very next line instead
+# of via an 'if kuckuck ...; then exit 0; fi' wrapper, because $? after
+# 'fi' reflects fi's own 0, not the command's exit code.
+kuckuck run "$FILE" 1>&2
+rc=$?
+
+if [ "$rc" -eq 0 ]; then
     exit 0
 fi
-rc=$?
 
 if [ "${KUCKUCK_HOOK_FAIL_OPEN:-0}" = "1" ]; then
     warn "kuckuck failed on $FILE (exit $rc). KUCKUCK_HOOK_FAIL_OPEN=1: continuing without pseudonymization (UNSAFE)."
