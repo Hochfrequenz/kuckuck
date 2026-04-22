@@ -133,6 +133,11 @@ def _check_mcp_subcommand(binary: str) -> int:
         print("kuckuck mcp --help did not list 'serve' subcommand", file=sys.stderr)
         return 1
 
+    # Timeout sized for the worst-case startup path: a ~300 MB PyInstaller
+    # onefile binary on Windows NTFS unpacks its _MEI directory on every
+    # invocation (typically 30-60 s cold), and only then does our deferred
+    # import of fastmcp / pydantic / torch run. 120 s leaves plenty of
+    # slack without giving up the "catch an actual hang" property.
     try:
         boot = subprocess.run(
             [binary, "mcp", "serve"],
@@ -140,10 +145,10 @@ def _check_mcp_subcommand(binary: str) -> int:
             text=True,
             capture_output=True,
             check=False,
-            timeout=20,
+            timeout=120,
         )
     except subprocess.TimeoutExpired:
-        print("kuckuck mcp serve did not exit within 20s on empty stdin", file=sys.stderr)
+        print("kuckuck mcp serve did not exit within 120s on empty stdin", file=sys.stderr)
         return 1
     combined_stderr = boot.stderr or ""
     for marker in ("ModuleNotFoundError", "ImportError: "):
