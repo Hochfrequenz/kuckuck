@@ -262,9 +262,7 @@ class TestPseudonymizeTool:
         monkeypatch.setattr("kuckuck_mcp.server.is_gliner_installed", lambda: False)
         source = tmp_path / "doc.txt"
         source.write_text("Kontakt max@firma.de", encoding="utf-8")
-        result = await mcp_client.call_tool(
-            "kuckuck_pseudonymize", arguments={"file_path": str(source)}
-        )
+        result = await mcp_client.call_tool("kuckuck_pseudonymize", arguments={"file_path": str(source)})
         # Email regex still fires; just no PERSON detection.
         assert "ok" in result.data
         assert "[[EMAIL_" in source.read_text(encoding="utf-8")
