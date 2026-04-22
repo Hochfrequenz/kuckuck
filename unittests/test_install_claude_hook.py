@@ -64,6 +64,28 @@ class TestBundledScriptSync:
         assert _CANONICAL_PS1.read_bytes() == _BUNDLED_PS1.read_bytes()
 
 
+class TestSettingsExampleSync:
+    """The documented example must track the block that install-claude-hook emits."""
+
+    @pytest.fixture
+    def example(self) -> dict[str, Any]:
+        raw = (_REPO_ROOT / "integrations" / "claude-code" / "settings.example.json").read_text(encoding="utf-8")
+        parsed: dict[str, Any] = json.loads(raw)
+        return parsed
+
+    def test_example_matcher_matches_emitted_block(self, example: dict[str, Any]) -> None:
+        pre_tool_use = example["hooks"]["PreToolUse"]
+        assert len(pre_tool_use) == 1
+        matcher_group = pre_tool_use[0]
+        assert matcher_group["matcher"] == install_hook.MATCHER
+        assert len(matcher_group["hooks"]) == 1
+        inner = matcher_group["hooks"][0]
+        assert inner["type"] == "command"
+        assert inner["if"] == install_hook.IF_FILTER
+        assert install_hook.POSIX_SCRIPT in inner["command"]
+        assert "$CLAUDE_PROJECT_DIR" in inner["command"]
+
+
 class TestMergeHookIntoSettings:
     """Pure-function tests for the idempotent settings merge."""
 
@@ -181,6 +203,55 @@ class TestMergeHookIntoSettings:
         assert json.dumps(seed, sort_keys=True) == snapshot
 
 
+class TestCommandStringRendering:
+    """Lock in the exact ``command`` shape emitted for each (platform, scope) combination.
+
+    The Windows cases are especially important to exercise on Linux CI:
+    ``script_path.as_posix()`` is a no-op on Linux (POSIX paths already
+    use ``/``) so a regression that reverts the call would silently pass
+    without these monkeypatched cases. We parametrize on ``sys.platform``
+    instead of skipping so a Linux-only CI matrix still covers both.
+    """
+
+    def test_posix_project_local_uses_claude_project_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("kuckuck.install_hook.sys.platform", "linux")
+        rendered = install_hook.command_string(Path("/irrelevant"), global_scope=False)
+        assert rendered == '"$CLAUDE_PROJECT_DIR"/.claude/hooks/kuckuck-pseudo.sh'
+
+    def test_posix_global_uses_absolute_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("kuckuck.install_hook.sys.platform", "linux")
+        rendered = install_hook.command_string(Path("/home/u/.claude/hooks/kuckuck-pseudo.sh"), global_scope=True)
+        assert rendered == '"/home/u/.claude/hooks/kuckuck-pseudo.sh"'
+
+    def test_windows_project_local_uses_forward_slashes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("kuckuck.install_hook.sys.platform", "win32")
+        rendered = install_hook.command_string(Path("ignored"), global_scope=False)
+        assert "\\" not in rendered, f"expected forward slashes only, got {rendered!r}"
+        assert rendered == (
+            "powershell -NoProfile -ExecutionPolicy Bypass -File "
+            '"$CLAUDE_PROJECT_DIR"/.claude/hooks/kuckuck-pseudo.ps1'
+        )
+
+    def test_windows_global_converts_backslashes_to_forward_slashes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Build a PureWindowsPath literal so str() / as_posix() produce
+        # Windows-style output even on a Linux host. Without .as_posix()
+        # this test would fail because the rendered command would contain
+        # backslashes that bash (the default Claude Code hook shell) eats.
+        from pathlib import PureWindowsPath  # pylint: disable=import-outside-toplevel
+
+        monkeypatch.setattr("kuckuck.install_hook.sys.platform", "win32")
+        # PureWindowsPath supports as_posix() and behaves like Path for our call.
+        win_path: Any = PureWindowsPath("C:\\Users\\u\\.claude\\hooks\\kuckuck-pseudo.ps1")
+        rendered = install_hook.command_string(win_path, global_scope=True)
+        assert "\\" not in rendered, f"expected forward slashes only, got {rendered!r}"
+        assert rendered == (
+            "powershell -NoProfile -ExecutionPolicy Bypass -File " '"C:/Users/u/.claude/hooks/kuckuck-pseudo.ps1"'
+        )
+
+
 class TestKuckuckEntryDetection:
     """The uninstaller must distinguish our own hook from unrelated user hooks."""
 
@@ -241,6 +312,37 @@ class TestRemoveHookFromSettings:
         install_hook.merge_hook_into_settings(settings, command="/tmp/kuckuck-pseudo.sh")
         install_hook.remove_hook_from_settings(settings)
         assert settings == {}
+
+    def test_write_is_atomic_no_tmp_leftover_on_success(self, tmp_path: Path) -> None:
+        target = tmp_path / "settings.json"
+        install_hook._write_settings(target, {"hooks": {"PreToolUse": []}})  # pylint: disable=protected-access
+        # No .tmp sibling must linger after a successful write.
+        assert list(tmp_path.glob("settings.json*")) == [target]
+        assert json.loads(target.read_text(encoding="utf-8")) == {"hooks": {"PreToolUse": []}}
+
+    def test_write_leaves_original_intact_on_failure(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Simulate a crash between open() and os.replace() by having
+        # os.replace raise. The pre-existing file must be unchanged; the
+        # .tmp sibling must be cleaned up.
+        target = tmp_path / "settings.json"
+        original = {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"command": "x"}]}]}}
+        target.write_text(json.dumps(original), encoding="utf-8")
+
+        def fail_replace(src: str, dst: str) -> None:
+            _ = src, dst
+            raise OSError("simulated crash mid-rename")
+
+        monkeypatch.setattr("kuckuck.install_hook.os.replace", fail_replace)
+        with pytest.raises(OSError, match="simulated crash"):
+            install_hook._write_settings(target, {"hooks": {"PreToolUse": []}})  # pylint: disable=protected-access
+
+        # Original content preserved and no .tmp file left behind.
+        assert json.loads(target.read_text(encoding="utf-8")) == original
+        assert list(tmp_path.glob("settings.json.tmp")) == []
 
     def test_preserves_user_hook_that_merely_mentions_the_filename(self) -> None:
         # Regression for H4 review finding: a user hook whose command
@@ -347,6 +449,30 @@ class TestCliInstallUninstall:
         assert "Warning: --global" in result.output
         assert (fake_home / ".claude" / "hooks" / install_hook.hook_script_name()).is_file()
 
+    def test_uninstall_global_round_trip(self, project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The install / uninstall code branches on --global to choose
+        # between ~/.claude and $PWD/.claude. We need both paths exercised
+        # with a fake Path.home() so no real user state is touched.
+        fake_home = project / "fake-home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+        install_result = _invoke(["install-claude-hook", "--global"])
+        assert install_result.exit_code == 0
+        settings_path = fake_home / ".claude" / "settings.json"
+        hook_path = fake_home / ".claude" / "hooks" / install_hook.hook_script_name()
+        assert settings_path.is_file()
+        assert hook_path.is_file()
+
+        uninstall_result = _invoke(["install-claude-hook", "--uninstall", "--global"])
+        assert uninstall_result.exit_code == 0
+        assert not hook_path.exists(), "global hook script must be removed"
+        # Settings file may still exist but must be empty of our entry.
+        if settings_path.is_file():
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            assert "hooks" not in settings or not settings["hooks"]
+
 
 # ---------------------------------------------------------------------------
 # Subprocess-level tests for the shell script itself.
@@ -355,11 +481,16 @@ class TestCliInstallUninstall:
 
 _ON_WINDOWS = sys.platform == "win32"
 _JQ_AVAILABLE = shutil.which("jq") is not None
+_PWSH_AVAILABLE = shutil.which("pwsh") is not None
 
 posix_only = pytest.mark.skipif(_ON_WINDOWS, reason="POSIX shell hook only runs on POSIX")
 jq_required = pytest.mark.skipif(
     not _JQ_AVAILABLE,
     reason="shell hook requires jq on PATH (apt install jq / brew install jq)",
+)
+pwsh_required = pytest.mark.skipif(
+    not _PWSH_AVAILABLE,
+    reason="PowerShell script tests need pwsh on PATH (install: https://aka.ms/install-powershell)",
 )
 
 
@@ -666,3 +797,146 @@ class TestHookScriptNoOpCases:
 def test_bundled_script_hash_visible() -> None:
     digest = hashlib.sha256(_BUNDLED_SH.read_bytes()).hexdigest()
     assert len(digest) == 64
+
+
+# ---------------------------------------------------------------------------
+# PowerShell-script tests. These run pwsh against the real .ps1 payload
+# so we cover the Windows codepath without needing a Windows CI runner.
+# Install pwsh (cross-platform): https://aka.ms/install-powershell
+# ---------------------------------------------------------------------------
+
+
+def _run_pwsh_hook(
+    *,
+    tool_name: str,
+    file_path: Path | None,
+    path_field: str = "file_path",
+    env_overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Spawn pwsh with the bundled .ps1 script and a crafted stdin payload."""
+    payload: dict[str, object] = {
+        "session_id": "test-session",
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool_name,
+        "tool_input": {path_field: str(file_path)} if file_path is not None else {},
+    }
+    env = os.environ.copy()
+    kuckuck_dir = str(Path(_kuckuck_bin()).parent)
+    env["PATH"] = f"{kuckuck_dir}{os.pathsep}{env.get('PATH', '')}"
+    if env_overrides:
+        for key, value in env_overrides.items():
+            env[key] = value
+
+    return subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(_BUNDLED_PS1)],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+        timeout=120,
+    )
+
+
+@pwsh_required
+class TestPowerShellHookScript:
+    """End-to-end pwsh coverage mirroring the bash subprocess tests."""
+
+    @pytest.fixture
+    def key_file(self, tmp_path: Path) -> Path:
+        path = tmp_path / ".kuckuck-key"
+        path.write_text("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff", encoding="utf-8")
+        return path
+
+    @pytest.fixture
+    def eml_file(self, tmp_path: Path) -> Path:
+        source = _REPO_ROOT / "unittests" / "example_files" / "sample_email.eml"
+        target = tmp_path / "brief.eml"
+        target.write_bytes(source.read_bytes())
+        return target
+
+    def test_pseudonymizes_eml_on_read(self, eml_file: Path, key_file: Path) -> None:
+        before = eml_file.read_text(encoding="utf-8")
+        assert "klaus.mueller@firma.de" in before
+
+        result = _run_pwsh_hook(
+            tool_name="Read",
+            file_path=eml_file,
+            env_overrides={"KUCKUCK_KEY_FILE": str(key_file)},
+        )
+        assert result.returncode == 0, result.stderr
+
+        after = eml_file.read_text(encoding="utf-8")
+        assert "klaus.mueller@firma.de" not in after
+        assert "[[EMAIL_" in after
+
+    def test_grep_payload_uses_path_field(self, eml_file: Path, key_file: Path) -> None:
+        result = _run_pwsh_hook(
+            tool_name="Grep",
+            file_path=eml_file,
+            path_field="path",
+            env_overrides={"KUCKUCK_KEY_FILE": str(key_file)},
+        )
+        assert result.returncode == 0, result.stderr
+        assert "[[EMAIL_" in eml_file.read_text(encoding="utf-8")
+
+    def test_missing_file_path_field_passes_through(self) -> None:
+        result = _run_pwsh_hook(tool_name="Read", file_path=None)
+        assert result.returncode == 0
+        assert "[kuckuck-hook]" not in result.stderr
+
+    def test_nonexistent_file_is_ignored(self, tmp_path: Path) -> None:
+        result = _run_pwsh_hook(
+            tool_name="Read",
+            file_path=tmp_path / "does-not-exist.eml",
+        )
+        assert result.returncode == 0
+
+    def test_missing_key_blocks_tool_call(self, tmp_path: Path, eml_file: Path) -> None:
+        bogus_key_path = tmp_path / "no-such-key"
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        result = _run_pwsh_hook(
+            tool_name="Read",
+            file_path=eml_file,
+            env_overrides={
+                "KUCKUCK_KEY_FILE": str(bogus_key_path),
+                "HOME": str(fake_home),
+            },
+        )
+        assert result.returncode == 2, result.stderr
+        assert "Refusing to Read" in result.stderr
+        assert "kuckuck_pseudonymize" in result.stderr
+        assert "exit 3" in result.stderr
+
+    def test_fail_open_env_var_lets_tool_through(self, tmp_path: Path, eml_file: Path) -> None:
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        result = _run_pwsh_hook(
+            tool_name="Read",
+            file_path=eml_file,
+            env_overrides={
+                "KUCKUCK_KEY_FILE": str(tmp_path / "no-such-key"),
+                "HOME": str(fake_home),
+                "KUCKUCK_HOOK_FAIL_OPEN": "1",
+            },
+        )
+        assert result.returncode == 0
+        assert "UNSAFE" in result.stderr
+
+    def test_garbled_stdin_json_blocks(self, tmp_path: Path) -> None:
+        env = os.environ.copy()
+        env["PATH"] = f"{Path(_kuckuck_bin()).parent}{os.pathsep}{env.get('PATH', '')}"
+        env["HOME"] = str(tmp_path)
+        env["KUCKUCK_KEY_FILE"] = str(tmp_path / "no-such-key")
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(_BUNDLED_PS1)],
+            input="this is not JSON",
+            text=True,
+            capture_output=True,
+            env=env,
+            check=False,
+            timeout=30,
+        )
+        assert result.returncode == 2
+        assert "failed to parse stdin as JSON" in result.stderr
