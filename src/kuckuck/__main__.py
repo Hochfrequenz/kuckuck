@@ -24,6 +24,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from cryptography.exceptions import InvalidTag
@@ -38,6 +39,7 @@ from kuckuck.detectors.ner import (
     is_model_available,
 )
 from kuckuck.mapping import Mapping, MappingCorruptError, load_mapping, save_mapping
+from kuckuck.options import RunOptions
 from kuckuck.preprocessors import (
     EmlPreprocessor,
     MarkdownPreprocessor,
@@ -53,6 +55,9 @@ from kuckuck.pseudonymize import (
     pseudonymize_text,
     restore_text,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from collections.abc import Callable
 
 # pseudonymize_msg_file lives in kuckuck.pseudonymize because it shares the
 # detector / mapping / counter plumbing with pseudonymize_text. The CLI
@@ -170,7 +175,7 @@ def cmd_init_key(
 
 
 @app.command("run")
-def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     paths: list[Path] = typer.Argument(..., exists=True, help="Files to pseudonymize in place."),
     key_file: Path | None = typer.Option(None, "--key-file", "-k", help="Override key lookup."),
     output_dir: Path | None = typer.Option(
@@ -211,71 +216,130 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     By default each file is overwritten in place and a matching
     ``<file>.kuckuck-map.enc`` sidecar is written next to it.
     """
+    options = RunOptions(
+        key_file=key_file,
+        output_dir=output_dir,
+        dry_run=dry_run,
+        sequential_tokens=sequential_tokens,
+        denylist=denylist,
+        phone_region=phone_region,
+        format=format_,
+        ner=ner,
+    )
+    run_pseudonymize(paths, options, _writer=_cli_progress_writer)
+
+
+def _cli_progress_writer(line: str) -> None:
+    """Adapter so the library API can stream per-file status to typer.echo."""
+    typer.echo(line)
+
+
+def run_pseudonymize(
+    paths: list[Path],
+    options: RunOptions,
+    *,
+    _writer: Callable[[str], None] | None = None,
+) -> list[PseudonymizeResult]:
+    """Library entry point for "pseudonymize a list of files end-to-end".
+
+    Mirrors the behaviour of ``kuckuck run`` without the typer plumbing
+    so it can be called from notebooks, scripts, or other Python code.
+    Returns one :class:`PseudonymizeResult` per input path in input order.
+
+    *_writer*, when set, receives one progress line per processed file.
+    The CLI hands typer.echo here; library callers usually leave it
+    ``None`` (silent).
+    """
     try:
-        master = load_key(key_file)
+        master = load_key(options.key_file)
     except KeyNotFoundError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(EXIT_KEY_NOT_FOUND) from exc
 
-    if ner:
-        # Hard error path: when the user opts in via the flag we do not want
-        # silent regex-only fallback. The library API stays soft.
-        if not is_gliner_installed():
-            typer.echo(
-                "NER requested via --ner but the optional 'gliner' package is not installed.\n"
-                "Install it via: pip install 'kuckuck[ner]'",
-                err=True,
-            )
-            raise typer.Exit(EXIT_MODEL_MISSING)
-        if not is_model_available():
-            typer.echo(
-                f"NER requested via --ner but no model was found at {default_model_path()}.\n"
-                "Download it via: kuckuck fetch-model",
-                err=True,
-            )
-            raise typer.Exit(EXIT_MODEL_MISSING)
-        if sequential_tokens:
-            # Sequential tokens are per-document counters, so the same
-            # person gets a different [[PERSON_N]] in each file. That
-            # defeats the main reason people enable NER (cross-doc name
-            # consistency). Warn but do not block - the user might want
-            # the shorter tokens for a one-shot job.
-            typer.echo(
-                "Warning: --ner with --sequential-tokens loses cross-document "
-                "stability for PERSON tokens. Drop --sequential-tokens for "
-                "stable hashes across files.",
-                err=True,
-            )
+    _check_ner_requirements(options)
 
-    denylist_entries = _read_denylist(denylist)
-    detectors = build_default_detectors(denylist=denylist_entries, phone_region=phone_region, use_ner=ner)
+    denylist_entries = _read_denylist(options.denylist)
+    detectors = build_default_detectors(
+        denylist=denylist_entries, phone_region=options.phone_region, use_ner=options.ner
+    )
 
-    if output_dir is not None:
-        output_dir.mkdir(parents=True, exist_ok=True)
+    if options.output_dir is not None:
+        options.output_dir.mkdir(parents=True, exist_ok=True)
 
+    results: list[PseudonymizeResult] = []
     for path in paths:
-        preprocessor = _select_preprocessor(format_, path)
-        target_text = output_dir / path.name if output_dir is not None else path
-        target_map = _sidecar_path(target_text)
-        mapping = _load_mapping_or_exit(master, target_map) if target_map.is_file() else Mapping()
-        result = _pseudonymize_one(
-            path=path,
-            preprocessor=preprocessor,
-            master=master,
-            detectors=detectors,
-            mapping=mapping,
-            sequential_tokens=sequential_tokens,
-        )
-        if dry_run:
-            typer.echo(f"--- {path} -> {len(result.replaced)} replacements ({preprocessor.name}) ---")
-            typer.echo(result.text)
-            continue
-        target_text.write_text(result.text, encoding="utf-8")
-        save_mapping(master, result.mapping, target_map)
+        result = _pseudonymize_path(path, master, detectors, options=options, writer=_writer)
+        results.append(result)
+    return results
+
+
+def _check_ner_requirements(options: RunOptions) -> None:
+    """Raise typer.Exit when ``--ner`` is set but the model isn't usable.
+
+    Library callers also benefit from this guard: building a Run with
+    ``ner=True`` on a system that has neither gliner nor the model
+    fails fast with a clear EXIT_MODEL_MISSING instead of a silent
+    regex-only run.
+    """
+    if not options.ner:
+        return
+    if not is_gliner_installed():
         typer.echo(
+            "NER requested via --ner but the optional 'gliner' package is not installed.\n"
+            "Install it via: pip install 'kuckuck[ner]'",
+            err=True,
+        )
+        raise typer.Exit(EXIT_MODEL_MISSING)
+    if not is_model_available():
+        typer.echo(
+            f"NER requested via --ner but no model was found at {default_model_path()}.\n"
+            "Download it via: kuckuck fetch-model",
+            err=True,
+        )
+        raise typer.Exit(EXIT_MODEL_MISSING)
+    if options.sequential_tokens:
+        typer.echo(
+            "Warning: --ner with --sequential-tokens loses cross-document "
+            "stability for PERSON tokens. Drop --sequential-tokens for "
+            "stable hashes across files.",
+            err=True,
+        )
+
+
+def _pseudonymize_path(
+    path: Path,
+    master: SecretStr,
+    detectors: list,  # type: ignore[type-arg]
+    *,
+    options: RunOptions,
+    writer: Callable[[str], None] | None,
+) -> PseudonymizeResult:
+    """Process a single file end-to-end: read, pseudonymize, write."""
+    preprocessor = _select_preprocessor(options.format, path)
+    target_text = options.output_dir / path.name if options.output_dir is not None else path
+    target_map = _sidecar_path(target_text)
+    mapping = _load_mapping_or_exit(master, target_map) if target_map.is_file() else Mapping()
+    result = _pseudonymize_one(
+        path=path,
+        preprocessor=preprocessor,
+        master=master,
+        detectors=detectors,
+        mapping=mapping,
+        sequential_tokens=options.sequential_tokens,
+    )
+    if options.dry_run:
+        if writer is not None:
+            writer(f"--- {path} -> {len(result.replaced)} replacements ({preprocessor.name}) ---")
+            writer(result.text)
+        return result
+    target_text.write_text(result.text, encoding="utf-8")
+    save_mapping(master, result.mapping, target_map)
+    if writer is not None:
+        writer(
             f"{path} -> {target_text} ({len(result.replaced)} replacements, "
             f"format: {preprocessor.name}, map: {target_map})"
         )
+    return result
 
 
 def _pseudonymize_one(  # pylint: disable=too-many-arguments,too-many-positional-arguments
