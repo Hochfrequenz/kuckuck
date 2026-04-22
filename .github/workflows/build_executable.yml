@@ -29,6 +29,22 @@ jobs:
             tox_env: build_executable_macos_ner
             artifact: kuckuck_macos_arm64_ner
             binary: kuckuck_macos_arm64_ner
+          - os: windows-latest
+            tox_env: build_executable_mcp
+            artifact: kuckuck-mcp_windows
+            binary: kuckuck-mcp_windows.exe
+          - os: macos-latest
+            tox_env: build_executable_macos_mcp
+            artifact: kuckuck-mcp_macos_arm64
+            binary: kuckuck-mcp_macos_arm64
+          - os: windows-latest
+            tox_env: build_executable_ner_mcp
+            artifact: kuckuck-mcp_windows_ner
+            binary: kuckuck-mcp_windows_ner.exe
+          - os: macos-latest
+            tox_env: build_executable_macos_ner_mcp
+            artifact: kuckuck-mcp_macos_arm64_ner
+            binary: kuckuck-mcp_macos_arm64_ner
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -163,6 +179,30 @@ jobs:
           name: kuckuck_macos_arm64_ner
           path: dist/macos_ner
         continue-on-error: true
+      - name: Download Windows MCP Executable
+        uses: actions/download-artifact@v8
+        with:
+          name: kuckuck-mcp_windows
+          path: dist/windows_mcp
+        continue-on-error: true
+      - name: Download macOS MCP Executable
+        uses: actions/download-artifact@v8
+        with:
+          name: kuckuck-mcp_macos_arm64
+          path: dist/macos_mcp
+        continue-on-error: true
+      - name: Download Windows MCP+NER Executable
+        uses: actions/download-artifact@v8
+        with:
+          name: kuckuck-mcp_windows_ner
+          path: dist/windows_mcp_ner
+        continue-on-error: true
+      - name: Download macOS MCP+NER Executable
+        uses: actions/download-artifact@v8
+        with:
+          name: kuckuck-mcp_macos_arm64_ner
+          path: dist/macos_mcp_ner
+        continue-on-error: true
       - name: Rename Executables with version
         run: |
           set -eu
@@ -191,6 +231,30 @@ jobs:
           else
             echo "::warning::macOS arm64 NER artifact missing; skipping"
           fi
+          if [ -f ./dist/windows_mcp/kuckuck-mcp_windows.exe ]; then
+            mv ./dist/windows_mcp/kuckuck-mcp_windows.exe \
+              ./dist/release/kuckuck-mcp_windows_${{ github.ref_name }}.exe
+          else
+            echo "::warning::Windows MCP artifact missing; skipping"
+          fi
+          if [ -f ./dist/macos_mcp/kuckuck-mcp_macos_arm64 ]; then
+            mv ./dist/macos_mcp/kuckuck-mcp_macos_arm64 \
+              ./dist/release/kuckuck-mcp_macos_arm64_${{ github.ref_name }}
+          else
+            echo "::warning::macOS arm64 MCP artifact missing; skipping"
+          fi
+          if [ -f ./dist/windows_mcp_ner/kuckuck-mcp_windows_ner.exe ]; then
+            mv ./dist/windows_mcp_ner/kuckuck-mcp_windows_ner.exe \
+              ./dist/release/kuckuck-mcp_windows_ner_${{ github.ref_name }}.exe
+          else
+            echo "::warning::Windows MCP+NER artifact missing; skipping"
+          fi
+          if [ -f ./dist/macos_mcp_ner/kuckuck-mcp_macos_arm64_ner ]; then
+            mv ./dist/macos_mcp_ner/kuckuck-mcp_macos_arm64_ner \
+              ./dist/release/kuckuck-mcp_macos_arm64_ner_${{ github.ref_name }}
+          else
+            echo "::warning::macOS arm64 MCP+NER artifact missing; skipping"
+          fi
           ls -la dist/release/
       - name: Upload Executable to Release
         uses: softprops/action-gh-release@v3
@@ -200,4 +264,8 @@ jobs:
             ./dist/release/kuckuck_macos_arm64_${{ github.ref_name }}
             ./dist/release/kuckuck_windows_ner_${{ github.ref_name }}.exe
             ./dist/release/kuckuck_macos_arm64_ner_${{ github.ref_name }}
+            ./dist/release/kuckuck-mcp_windows_${{ github.ref_name }}.exe
+            ./dist/release/kuckuck-mcp_macos_arm64_${{ github.ref_name }}
+            ./dist/release/kuckuck-mcp_windows_ner_${{ github.ref_name }}.exe
+            ./dist/release/kuckuck-mcp_macos_arm64_ner_${{ github.ref_name }}
           fail_on_unmatched_files: false
