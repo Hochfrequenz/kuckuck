@@ -13,6 +13,7 @@ typer wrapper lives in :mod:`kuckuck.__main__`.
 from __future__ import annotations
 
 import json
+import re
 import stat
 import sys
 from dataclasses import dataclass
@@ -29,6 +30,14 @@ IF_FILTER = "Read(*.eml) | Read(*.msg) | Edit(*.eml) | Edit(*.msg) | Grep(*.eml)
 #: Script filenames under ``src/kuckuck/_hooks/`` and their on-disk names.
 POSIX_SCRIPT = "kuckuck-pseudo.sh"
 WINDOWS_SCRIPT = "kuckuck-pseudo.ps1"
+
+#: Regex used to spot an installed kuckuck hook entry in ``settings.json``.
+#: Requires both a path separator before the filename and a shell-style
+#: terminator after it (end-of-string, whitespace, or a closing quote).
+#: That way commands like ``cp legacy.sh /tmp/kuckuck-pseudo.sh-backup``
+#: or ``echo 'will install kuckuck-pseudo.sh later'`` do not look like
+#: ours and survive ``--uninstall``.
+_KUCKUCK_COMMAND_RE = re.compile(r"""[/\\]kuckuck-pseudo\.(?:sh|ps1)(?=$|["'\s])""")
 
 
 @dataclass(frozen=True)
@@ -75,17 +84,20 @@ def _ensure_executable(target: Path) -> None:
 def _is_kuckuck_entry(entry: Any) -> bool:
     """Return True if *entry* is an inner hook handler pointing at the kuckuck script.
 
-    Detection is intentionally loose: any ``command`` string that contains
-    either ``kuckuck-pseudo.sh`` or ``kuckuck-pseudo.ps1`` is treated as
-    ours. That covers both the project-local ``$CLAUDE_PROJECT_DIR``
-    layout and absolute paths emitted by the ``--global`` install.
+    The detector requires a path-separator character immediately before
+    the script filename. That covers every command we emit (project-local
+    ``"$CLAUDE_PROJECT_DIR"/.claude/hooks/kuckuck-pseudo.sh`` and global
+    absolute paths on POSIX or Windows) while rejecting unrelated user
+    commands that merely happen to mention the filename in free text -
+    e.g. ``echo 'will install kuckuck-pseudo.sh later'`` must survive a
+    ``--uninstall`` run.
     """
     if not isinstance(entry, dict):
         return False
     command = entry.get("command")
     if not isinstance(command, str):
         return False
-    return POSIX_SCRIPT in command or WINDOWS_SCRIPT in command
+    return _KUCKUCK_COMMAND_RE.search(command) is not None
 
 
 def _kuckuck_block(command: str) -> dict[str, Any]:
@@ -114,11 +126,17 @@ def command_string(script_path: Path, *, global_scope: bool) -> str:
     On Windows we prefix with ``powershell -NoProfile
     -ExecutionPolicy Bypass -File`` so Claude Code's hook executor
     spawns ``powershell.exe`` regardless of user PATH associations.
+    Forward slashes are used throughout because Claude Code runs hook
+    commands through ``bash`` by default on every platform, and bash
+    (including Git Bash on native Windows) eats backslashes inside
+    double-quoted strings. PowerShell itself accepts forward slashes
+    in paths, so the ``-File`` argument parses correctly either way.
     """
     if sys.platform == "win32":
         if global_scope:
-            return f'powershell -NoProfile -ExecutionPolicy Bypass -File "{script_path}"'
-        inner = '"$CLAUDE_PROJECT_DIR"\\.claude\\hooks\\' + WINDOWS_SCRIPT
+            absolute = script_path.as_posix()
+            return f'powershell -NoProfile -ExecutionPolicy Bypass -File "{absolute}"'
+        inner = '"$CLAUDE_PROJECT_DIR"/.claude/hooks/' + WINDOWS_SCRIPT
         return f"powershell -NoProfile -ExecutionPolicy Bypass -File {inner}"
     if global_scope:
         return f'"{script_path}"'
@@ -131,23 +149,28 @@ def merge_hook_into_settings(settings: dict[str, Any], command: str) -> bool:
     Returns True iff *settings* was mutated. Idempotent: if any existing
     inner hook already references the kuckuck script, the user is
     presumed to have customised it and we leave the block untouched.
+    The input dict is not mutated on the False path.
     """
-    hooks = settings.setdefault("hooks", {})
-    if not isinstance(hooks, dict):
+    hooks = settings.get("hooks")
+    if hooks is not None and not isinstance(hooks, dict):
         raise ValueError(f"settings.hooks is not an object: {type(hooks).__name__}")
+    pre_tool_use: list[Any] | None = None
+    if isinstance(hooks, dict):
+        pre_tool_use = hooks.get("PreToolUse")
+        if pre_tool_use is not None and not isinstance(pre_tool_use, list):
+            raise ValueError(f"settings.hooks.PreToolUse is not a list: {type(pre_tool_use).__name__}")
+        for matcher_group in pre_tool_use or []:
+            if not isinstance(matcher_group, dict):
+                continue
+            inner_hooks = matcher_group.get("hooks") or []
+            if not isinstance(inner_hooks, list):
+                continue
+            if any(_is_kuckuck_entry(h) for h in inner_hooks):
+                return False
+
+    # Only now that we know we are going to append, create the scaffolding.
+    hooks = settings.setdefault("hooks", {})
     pre_tool_use = hooks.setdefault("PreToolUse", [])
-    if not isinstance(pre_tool_use, list):
-        raise ValueError(f"settings.hooks.PreToolUse is not a list: {type(pre_tool_use).__name__}")
-
-    for matcher_group in pre_tool_use:
-        if not isinstance(matcher_group, dict):
-            continue
-        inner_hooks = matcher_group.get("hooks") or []
-        if not isinstance(inner_hooks, list):
-            continue
-        if any(_is_kuckuck_entry(h) for h in inner_hooks):
-            return False
-
     pre_tool_use.append(_kuckuck_block(command))
     return True
 
