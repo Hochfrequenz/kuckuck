@@ -231,6 +231,87 @@ def build_server() -> FastMCP:
             for d in detectors
         ]
 
+    @mcp.prompt(
+        name="pseudonymize_before_reading",
+        description=(
+            "Walks the model through the safe sequence: pseudonymize a sensitive "
+            "file via Kuckuck FIRST, then read the result. Use this when the user "
+            "drops a .eml / .msg / .md / .xml or any file that may contain PII."
+        ),
+        tags={"kuckuck", "workflow", "safety"},
+    )
+    def pseudonymize_before_reading(file_path: str) -> str:
+        """Quick-action prompt: pseudonymize then read.
+
+        Surfaced as a template in MCP clients. Picking it sets the model
+        up to call ``kuckuck_pseudonymize(file_path=...)`` first and only
+        then read the file - the canonical PII-safe sequence.
+        """
+        return (
+            f"The user wants help with the file at {file_path}, which may contain "
+            "personally identifiable data (names, emails, phones).\n\n"
+            f"Step 1: call kuckuck_pseudonymize(file_path={file_path!r}) to replace "
+            "PII with stable [[EMAIL_xxx]] / [[PHONE_xxx]] / [[HANDLE_xxx]] / "
+            "[[PERSON_xxx]] tokens.\n"
+            "Step 2: read the file with your normal Read tool. You will only see "
+            "tokens, not the original PII.\n"
+            "Step 3: do whatever the user asked you to do. Use the same tokens "
+            "verbatim in your answer.\n"
+            "Step 4: when the user wants the cleartext back, they run "
+            "'kuckuck restore <file>' locally - do NOT call kuckuck_restore unless "
+            "they explicitly ask for it (it triggers a user-confirmation prompt)."
+        )
+
+    @mcp.prompt(
+        name="diagnose_kuckuck_setup",
+        description=(
+            "Calls kuckuck_status, surfaces every detected configuration problem "
+            "and the matching remediation step. Use this when a kuckuck_* call "
+            "errored out or when the user asks 'is kuckuck set up correctly?'"
+        ),
+        tags={"kuckuck", "troubleshooting", "setup"},
+    )
+    def diagnose_kuckuck_setup() -> str:
+        """Quick-action prompt: run a self-diagnostic and explain results."""
+        return (
+            "Call kuckuck_status, then format the response as follows:\n\n"
+            "1. Print the boolean fields (key_found, gliner_installed, "
+            "model_available) as a short status table.\n"
+            "2. If the 'problems' list is empty, say 'Kuckuck is fully operational.'\n"
+            "3. If 'problems' is non-empty, list each entry as a bullet with a "
+            "clear remediation step. Do NOT abbreviate the messages - they "
+            "already contain the exact commands the user needs to run."
+        )
+
+    @mcp.prompt(
+        name="explain_kuckuck_tokens",
+        description=(
+            "Explains what the [[EMAIL_xxx]] / [[PERSON_xxx]] / [[HANDLE_xxx]] etc. "
+            "tokens in a pseudonymized file mean and how the user can restore the "
+            "originals. Use when the model encounters tokens and the user asks "
+            "what they are."
+        ),
+        tags={"kuckuck", "explanation"},
+    )
+    def explain_kuckuck_tokens() -> str:
+        """Quick-action prompt: explain Kuckuck tokens."""
+        return (
+            "Explain to the user that:\n\n"
+            "- Tokens like [[EMAIL_a7f3b2c1]] are produced by Kuckuck "
+            "(https://github.com/Hochfrequenz/kuckuck) when a file gets "
+            "pseudonymized.\n"
+            "- The same original value always gets the same token, even across "
+            "documents and across team members who share a Master-Key.\n"
+            "- Token prefixes: EMAIL, PHONE, HANDLE (Jira/Confluence mention), "
+            "TERM (denylist entry like a customer name), PERSON (NER-detected "
+            "person name; only when --ner is enabled).\n"
+            "- The mapping back to cleartext is in the AES-GCM-encrypted "
+            "*.kuckuck-map.enc sidecar next to the file. Without the Master-Key, "
+            "the mapping is cryptographically unreadable.\n"
+            "- To restore: 'kuckuck restore <file>' in the user's shell, locally. "
+            "The model should NOT auto-restore (that bypasses the user's intent)."
+        )
+
     @mcp.tool
     def kuckuck_status() -> StatusInfo:
         """Self-diagnostic: which Kuckuck capabilities are available right now.

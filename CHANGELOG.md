@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MCP server** `kuckuck-mcp` (Issue [#10](https://github.com/Hochfrequenz/kuckuck/issues/10)).
+  Sub-package `src/kuckuck_mcp/`, optional extra `kuckuck[mcp]`, console-script `kuckuck-mcp`.
+  Built on FastMCP `>= 3` (consistent with the Hochfrequenz MCP stack).
+  Four stdio tools: `kuckuck_pseudonymize`, `kuckuck_restore` (gated behind FastMCP elicitation), `kuckuck_list_detectors`, `kuckuck_status` (with aggregated `problems`-list and remediation hints, pattern from `Hochfrequenz/sap-mcp-config`).
+  Three discoverability prompts (`pseudonymize_before_reading`, `diagnose_kuckuck_setup`, `explain_kuckuck_tokens`) so MCP clients surface the safe workflows as quick-actions.
+  All tools are `file_path`-based — a text-input variant would have leaked PII through the tool argument.
+  No MCP resources exposed (mapping inspection stays local via `kuckuck inspect`).
+- Setup guides plus example configs for Claude Desktop, Claude Code, Cursor and opencode in `integrations/mcp/`.
+- AGENTS.md updated with the rule: read FastMCP docs before changing `src/kuckuck_mcp/`, return-types are pydantic `BaseModel` not `TypedDict`.
+
 ## [0.1.0] - 2026-04-22
 
 First public release of Kuckuck.

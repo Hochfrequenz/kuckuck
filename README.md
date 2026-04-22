@@ -339,7 +339,20 @@ restored = restore_text(source.read_text(encoding="utf-8"), result.mapping)
 
 Wenn du Claude Code, Cursor, GitHub Copilot, Codex oder ähnliche Coding-Assistenten benutzt, die Dateien in deinem Repo lesen können, kannst du ihnen beibringen, Dokumente mit personenbezogenen Daten **immer** zuerst durch Kuckuck zu schicken.
 
-### AGENTS.md / CLAUDE.md Snippet
+### MCP-Server (empfohlen)
+
+Kuckuck kann sich als Model Context Protocol Server registrieren.
+Damit ruft der Assistent `kuckuck_pseudonymize` und `kuckuck_restore` als native MCP-Tools auf, ohne pro-Client-Hook und ohne dass du dich auf AGENTS.md-Konventionen verlassen musst.
+
+```bash
+pip install "kuckuck[mcp]"
+# danach den MCP-Server in deinem Client eintragen
+```
+
+Setup-Anleitungen für Claude Desktop, Claude Code, Cursor und opencode: siehe [`integrations/mcp/README.md`](integrations/mcp/README.md).
+Beispiel-Configs liegen daneben.
+
+### AGENTS.md / CLAUDE.md Snippet (Fallback)
 
 Füge folgenden Abschnitt in deine `AGENTS.md` oder `CLAUDE.md` ein:
 

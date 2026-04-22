@@ -144,6 +144,55 @@ class TestServerSetup:
         assert "kuckuck_restore" in server.instructions
 
 
+class TestPromptDiscoverability:
+    async def test_three_prompts_are_registered(self, mcp_client: Client) -> None:
+        # Prompts surface as quick-actions in MCP clients (Claude Desktop /
+        # Code show them in the slash-command picker). They are the
+        # discoverability layer on top of the tools.
+        prompts = await mcp_client.list_prompts()
+        names = {p.name for p in prompts}
+        expected = {
+            "pseudonymize_before_reading",
+            "diagnose_kuckuck_setup",
+            "explain_kuckuck_tokens",
+        }
+        assert expected.issubset(names)
+
+    async def test_pseudonymize_prompt_renders_with_file_path(
+        self, mcp_client: Client, tmp_path: Path
+    ) -> None:
+        result = await mcp_client.get_prompt(
+            "pseudonymize_before_reading",
+            arguments={"file_path": str(tmp_path / "foo.eml")},
+        )
+        # The prompt result holds a list of MCP messages; the rendered
+        # text mentions the file path AND the safe sequence (pseudonymize
+        # first, read second).
+        rendered = " ".join(str(m.content) for m in result.messages)
+        assert "foo.eml" in rendered
+        assert "kuckuck_pseudonymize" in rendered
+        assert "Step" in rendered
+
+    async def test_diagnose_prompt_references_status_tool(
+        self, mcp_client: Client
+    ) -> None:
+        result = await mcp_client.get_prompt("diagnose_kuckuck_setup")
+        rendered = " ".join(str(m.content) for m in result.messages)
+        assert "kuckuck_status" in rendered
+        assert "problems" in rendered
+
+    async def test_explain_prompt_covers_token_types(
+        self, mcp_client: Client
+    ) -> None:
+        result = await mcp_client.get_prompt("explain_kuckuck_tokens")
+        rendered = " ".join(str(m.content) for m in result.messages)
+        # Must explain at least the four user-visible token prefixes.
+        for prefix in ("EMAIL", "PHONE", "HANDLE", "PERSON"):
+            assert prefix in rendered
+        # Must point at the local restore path (we never auto-restore).
+        assert "kuckuck restore" in rendered
+
+
 class TestPseudonymizeTool:
     async def test_pseudonymize_returns_status_line(
         self, mcp_client: Client, tmp_path: Path

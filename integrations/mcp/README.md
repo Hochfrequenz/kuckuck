@@ -59,6 +59,17 @@ kuckuck init-key --key-file PATH    # eigener Pfad
 
 Alle Tools nehmen einen `file_path`, kein direktes Text-Argument — siehe [Decision 7 in Issue #10](https://github.com/Hochfrequenz/kuckuck/issues/10#issuecomment-4294693864): Text-Tool hätte das LLM den Klartext im Tool-Argument schon sehen lassen, was den Schutz aushebelt.
 
+## Verfügbare Prompts
+
+Prompts sind MCP-Discoverability-Templates — die meisten Clients zeigen sie im Slash-Menü oder Quick-Action-Picker.
+Sie generieren keine Side-Effects, sondern liefern dem Modell eine Anleitung in welcher Reihenfolge es die Tools nutzen soll.
+
+| Prompt | Wann nutzen |
+|---|---|
+| `pseudonymize_before_reading(file_path)` | Wenn der User dir eine Datei mit potentiellem PII gibt - liefert dem Modell die safe-by-default Sequenz (Pseudonymize first, dann Read). |
+| `diagnose_kuckuck_setup` | Wenn ein `kuckuck_*` Tool fehlschlägt oder der User fragt "stimmt mein Kuckuck-Setup?" - ruft `kuckuck_status` auf und formatiert die Probleme + Remediations. |
+| `explain_kuckuck_tokens` | Wenn das Modell auf `[[EMAIL_xxx]]` / `[[PERSON_xxx]]` Tokens trifft und der User fragt was die bedeuten. |
+
 ## Konfiguration pro Client
 
 ### Claude Desktop
