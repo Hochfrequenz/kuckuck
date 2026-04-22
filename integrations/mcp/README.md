@@ -16,6 +16,20 @@ which kuckuck-mcp
 # /home/you/.local/bin/kuckuck-mcp  oder ähnlich
 ```
 
+## Welche Dateien darf der Server überhaupt anfassen?
+
+Der Server macht **destruktive Änderungen** (in-place Pseudonymisierung), deshalb ist standardmäßig der Pfad-Bereich eingeschränkt: nur Dateien unter dem `$PWD` zum Server-Start dürfen gelesen oder geschrieben werden.
+Der MCP-Client startet den Server-Subprocess in seinem eigenen Working-Directory — das ist meistens **nicht** dein Repo-Root.
+Empfehlung: setze `KUCKUCK_MCP_ALLOWED_ROOTS` explizit im MCP-Client-Config auf einen oder mehrere absolute Pfade (Doppelpunkt-getrennt).
+
+```jsonc
+"env": {
+  "KUCKUCK_MCP_ALLOWED_ROOTS": "/home/me/work:/home/me/inbox"
+}
+```
+
+Spezialwert `*` deaktiviert die Beschränkung komplett — **nicht empfohlen**, weil das LLM dann z. B. `/etc/passwd` als file_path angeben und überschreiben könnte.
+
 ## Wie der Server an deinen privaten Key kommt
 
 Der MCP-Server ruft intern `kuckuck.config.load_key(None)` auf, also denselben Lookup-Mechanismus wie die `kuckuck`-CLI.

@@ -1,9 +1,13 @@
 {
-  "_comment": "Add this block to ~/.cursor/mcp.json (global) or .cursor/mcp.json (project-local). Restart Cursor after editing.",
+  "_comment": "Add this block to ~/.cursor/mcp.json (global) or .cursor/mcp.json (project-local). Restart Cursor after editing. Replace /absolute/path/to/.kuckuck-key with your actual key file.",
   "mcpServers": {
     "kuckuck": {
       "command": "kuckuck-mcp",
-      "args": []
+      "args": [],
+      "env": {
+        "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key",
+        "KUCKUCK_MCP_ALLOWED_ROOTS": "/absolute/path/to/your/workspace"
+      }
     }
   }
 }

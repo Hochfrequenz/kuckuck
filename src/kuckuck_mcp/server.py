@@ -34,6 +34,7 @@ Before editing this file, read the relevant FastMCP doc pages
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -58,6 +59,56 @@ from kuckuck.mapping import load_mapping
 from kuckuck.options import RunOptions
 from kuckuck.pseudonymize import build_default_detectors, restore_text
 from kuckuck.runner import run_pseudonymize
+
+
+#: Env var that lists colon-separated allowed roots for file_path arguments.
+#: Default (when unset): only $PWD at server-start time is allowed. Setting
+#: this lets the operator widen the workspace explicitly, e.g.
+#: ``KUCKUCK_MCP_ALLOWED_ROOTS=/home/me/work:/home/me/inbox``. Set to ``*``
+#: to disable confinement entirely (NOT recommended for shared MCP clients).
+_ALLOWED_ROOTS_ENV = "KUCKUCK_MCP_ALLOWED_ROOTS"
+
+
+def _allowed_roots() -> list[Path] | None:
+    """Return the resolved allowed-root paths, or None to disable confinement.
+
+    A return value of ``None`` only happens when the operator explicitly sets
+    the env var to ``*`` - the default uses ``$PWD`` as the single root.
+    """
+    raw = os.environ.get(_ALLOWED_ROOTS_ENV, "").strip()
+    if raw == "*":
+        return None
+    if not raw:
+        return [Path.cwd().resolve()]
+    return [Path(p).expanduser().resolve() for p in raw.split(os.pathsep) if p]
+
+
+def _ensure_path_in_workspace(file_path: str) -> Path:
+    """Reject path arguments that escape the allowed workspace roots.
+
+    Without this check, a model could call
+    ``kuckuck_pseudonymize(file_path="/etc/passwd")`` and Kuckuck would
+    happily overwrite the file in place. By default the workspace is
+    just ``$PWD`` at server-start; operators widen it via
+    KUCKUCK_MCP_ALLOWED_ROOTS.
+    """
+    candidate = Path(file_path).expanduser().resolve()
+    roots = _allowed_roots()
+    if roots is None:
+        return candidate
+    for root in roots:
+        try:
+            candidate.relative_to(root)
+            return candidate
+        except ValueError:
+            continue
+    raise ToolError(
+        f"Refusing to operate on {file_path}: path is outside the allowed "
+        f"workspace roots ({', '.join(str(r) for r in roots)}). "
+        f"To widen the workspace, set the {_ALLOWED_ROOTS_ENV} environment "
+        "variable in your MCP client config (colon-separated absolute paths, "
+        "or '*' to disable confinement entirely)."
+    )
 
 
 class DetectorInfo(BaseModel):
@@ -118,13 +169,20 @@ def build_server() -> FastMCP:
     )
 
     @mcp.tool
-    async def kuckuck_pseudonymize(
+    def kuckuck_pseudonymize(
         file_path: str,
         format: Literal["auto", "text", "eml", "msg", "md", "xml"] = "auto",
         ner: bool = False,
         dry_run: bool = False,
     ) -> str:
         """Pseudonymize a file in place; write the encrypted mapping sidecar next to it.
+
+        WARNING: this tool MODIFIES the file at *file_path* unless
+        ``dry_run=True``. It writes a *.kuckuck-map.enc sidecar next to
+        the file. Path arguments are confined to the workspace roots
+        listed in KUCKUCK_MCP_ALLOWED_ROOTS (default: $PWD at server
+        start) so the model cannot accidentally rewrite arbitrary
+        files like /etc/hosts.
 
         Returns a short status line with the replacement count and the
         format that was applied. The cleartext content of the file does NOT
@@ -135,7 +193,7 @@ def build_server() -> FastMCP:
         ``kuckuck fetch-model``). Use ``dry_run=True`` to compute the result
         without writing anything to disk.
         """
-        path = Path(file_path)
+        path = _ensure_path_in_workspace(file_path)
         if not path.is_file():
             raise ToolError(f"{file_path}: not a regular file")
         try:
@@ -175,9 +233,11 @@ def build_server() -> FastMCP:
         cleartext leaves the server.
 
         Returns the restored content as a string, or a short cancellation
-        message if the user declined.
+        message if the user declined. Path arguments are confined to the
+        workspace roots listed in KUCKUCK_MCP_ALLOWED_ROOTS (default:
+        $PWD at server start).
         """
-        path = Path(file_path)
+        path = _ensure_path_in_workspace(file_path)
         if not path.is_file():
             raise ToolError(f"{file_path}: not a regular file")
         sidecar = path.with_suffix(path.suffix + ".kuckuck-map.enc")
@@ -329,9 +389,14 @@ def build_server() -> FastMCP:
             load_key(None)
             key_found = True
             key_error = ""
-        except KeyNotFoundError as exc:
+        except KeyNotFoundError:
             key_found = False
-            key_error = str(exc)
+            # Deliberately NOT echo the full KeyNotFoundError text here:
+            # it lists the absolute lookup paths (~/.config/..., /home/USER/...)
+            # which leak the operator's username and filesystem layout to the
+            # model context. The remediation hint in 'problems' below tells
+            # the user what to do without exposing those internals.
+            key_error = "no key file in the configured lookup chain"
         gliner_ok = is_gliner_installed()
         model_ok = is_model_available()
 
