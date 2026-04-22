@@ -115,9 +115,7 @@ def test_run_pseudonymize_with_ner_raises_when_model_missing(
         run_pseudonymize([source], RunOptions(key_file=key_file, ner=True))
 
 
-def test_run_pseudonymize_invalid_format_raises_value_error(
-    tmp_path: Path, key_file: Path
-) -> None:
+def test_run_pseudonymize_invalid_format_raises_value_error(tmp_path: Path, key_file: Path) -> None:
     source = tmp_path / "doc.txt"
     source.write_text("Hi", encoding="utf-8")
     # Library API surfaces unknown formats as ValueError, not typer.BadParameter.
