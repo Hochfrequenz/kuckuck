@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
@@ -78,6 +78,12 @@ from kuckuck.mapping import load_mapping
 from kuckuck.options import RunOptions
 from kuckuck.pseudonymize import build_default_detectors, restore_text
 from kuckuck.runner import run_pseudonymize
+
+#: Format selector accepted by ``kuckuck_pseudonymize``. Mirrors the
+#: ``--format`` choices of the ``kuckuck run`` CLI. Pulled out of the tool
+#: signature so the literal lives in one place and FastMCP renders the
+#: same enum into the JSON-Schema regardless of where it gets reused.
+FormatChoice: TypeAlias = Literal["auto", "text", "eml", "msg", "md", "xml"]
 
 #: Env var that lists colon-separated allowed roots for file_path arguments.
 #: Default (when unset): only $PWD at server-start time is allowed. Setting
@@ -192,10 +198,18 @@ def build_server() -> FastMCP:
         ),
     )
 
-    @mcp.tool
+    @mcp.tool(
+        annotations={
+            "title": "Pseudonymize a file (destructive, in-place)",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
+    )
     def kuckuck_pseudonymize(
         file_path: str,
-        format: Literal["auto", "text", "eml", "msg", "md", "xml"] = "auto",
+        format: FormatChoice = "auto",
         ner: bool | None = None,
         dry_run: bool = False,
     ) -> str:
@@ -260,7 +274,15 @@ def build_server() -> FastMCP:
         suffix = " (dry-run, nothing written)" if dry_run else ""
         return f"ok: {file_path} -> {len(result.replaced)} replacements{suffix}"
 
-    @mcp.tool
+    @mcp.tool(
+        annotations={
+            "title": "Restore cleartext PII (gated by user elicitation)",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
+    )
     async def kuckuck_restore(file_path: str, ctx: Context) -> str:
         """Restore the cleartext content of a pseudonymized file.
 
@@ -310,7 +332,15 @@ def build_server() -> FastMCP:
         text = path.read_text(encoding="utf-8")
         return restore_text(text, mapping)
 
-    @mcp.tool
+    @mcp.tool(
+        annotations={
+            "title": "List active detectors (read-only metadata)",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
+    )
     def kuckuck_list_detectors() -> list[DetectorInfo]:
         """List the active built-in detectors with name, priority, and entity type.
 
@@ -325,7 +355,15 @@ def build_server() -> FastMCP:
             detectors.append(NerDetector())
         return [DetectorInfo(name=d.name, priority=d.priority, entity_type=d.entity_type.value) for d in detectors]
 
-    @mcp.tool
+    @mcp.tool(
+        annotations={
+            "title": "Download GLiNER model (~1.1 GB, gated by elicitation)",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        }
+    )
     async def kuckuck_fetch_model(ctx: Context) -> str:
         """Download the GLiNER model (~ 1.1 GB) into the local cache.
 
@@ -516,7 +554,15 @@ def build_server() -> FastMCP:
             "The model should NOT auto-restore (that bypasses the user's intent)."
         )
 
-    @mcp.tool
+    @mcp.tool(
+        annotations={
+            "title": "Self-diagnostic (read-only setup check)",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
+    )
     def kuckuck_status() -> StatusInfo:
         """Self-diagnostic: which Kuckuck capabilities are available right now.
 
