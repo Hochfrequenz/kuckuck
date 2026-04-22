@@ -5,9 +5,9 @@
     "kuckuck": {
       "type": "local",
       "command": ["kuckuck-mcp"],
+      "enabled": true,
       "environment": {
-        "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key",
-        "KUCKUCK_MCP_ALLOWED_ROOTS": "/absolute/path/to/your/workspace"
+        "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"
       }
     }
   }

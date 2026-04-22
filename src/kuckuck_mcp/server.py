@@ -253,10 +253,14 @@ def build_server() -> FastMCP:
                 RunOptions(format=format, ner=effective_ner, dry_run=dry_run),
             )
         except KeyNotFoundError as exc:
+            # Deliberately do NOT echo {exc}: KeyNotFoundError lists the
+            # absolute lookup paths (~/.config/..., /home/USER/...) which
+            # leak username and filesystem layout into the model context.
+            # Same discipline as kuckuck_status.key_error.
             raise ToolError(
-                f"Master key not found ({exc}). "
+                "Master key not found in the configured lookup chain. "
                 "Fix: set KUCKUCK_KEY_FILE in your MCP client config to an absolute key-file path, "
-                "or call kuckuck_status to see the full lookup chain."
+                "or call kuckuck_status for a structured diagnosis."
             ) from exc
         except NerNotInstalledError as exc:
             raise ToolError(
@@ -327,8 +331,26 @@ def build_server() -> FastMCP:
         try:
             master = load_key(None)
         except KeyNotFoundError as exc:
-            raise ToolError(f"master key not found: {exc}") from exc
-        mapping = load_mapping(master, sidecar)
+            # Same path-leak discipline as kuckuck_pseudonymize and
+            # kuckuck_status: don't echo the absolute lookup paths.
+            raise ToolError(
+                "Master key not found in the configured lookup chain. "
+                "Fix: set KUCKUCK_KEY_FILE in your MCP client config to an absolute key-file path, "
+                "or call kuckuck_status for a structured diagnosis."
+            ) from exc
+        except ValueError as exc:
+            raise ToolError(f"master key file is malformed: {exc}") from exc
+        try:
+            mapping = load_mapping(master, sidecar)
+        except (OSError, ValueError, RuntimeError) as exc:
+            # MappingCorruptError inherits ValueError; wrong key, truncated
+            # file, magic mismatch and version mismatch all surface here.
+            # Without this catch they bubble as a stack trace into the model.
+            raise ToolError(
+                f"Mapping sidecar could not be loaded ({exc}). "
+                "This usually means the master key does not match the one used to pseudonymize the file, "
+                "or the .kuckuck-map.enc file is corrupt."
+            ) from exc
         text = path.read_text(encoding="utf-8")
         return restore_text(text, mapping)
 
@@ -587,6 +609,11 @@ def build_server() -> FastMCP:
             # model context. The remediation hint in 'problems' below tells
             # the user what to do without exposing those internals.
             key_error = "no key file in the configured lookup chain"
+        except ValueError:
+            # Empty / unreadable key file: load_key found a candidate but
+            # rejected its content. Same path-leak discipline.
+            key_found = False
+            key_error = "located key file is empty or malformed"
         gliner_ok = is_gliner_installed()
         model_ok = is_model_available()
 

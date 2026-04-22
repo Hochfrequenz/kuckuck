@@ -149,6 +149,23 @@ class TestServerSetup:
         assert "kuckuck_pseudonymize" in server.instructions
         assert "kuckuck_restore" in server.instructions
 
+    async def test_tool_annotations_match_destructiveness_contract(self, mcp_client: KuckuckClient) -> None:
+        # MCP clients render confirmation UX off these annotations. A
+        # silent regression here would let `kuckuck_pseudonymize` look
+        # like a read-only call to the user. Pin the contract.
+        tools = await mcp_client.list_tools()
+        by_name = {t.name: t.annotations for t in tools}
+        ps = by_name["kuckuck_pseudonymize"]
+        assert ps is not None and ps.destructiveHint is True and ps.readOnlyHint is False
+        re = by_name["kuckuck_restore"]
+        assert re is not None and re.readOnlyHint is True and re.openWorldHint is False
+        fm = by_name["kuckuck_fetch_model"]
+        assert fm is not None and fm.openWorldHint is True and fm.idempotentHint is True
+        ld = by_name["kuckuck_list_detectors"]
+        assert ld is not None and ld.readOnlyHint is True
+        st = by_name["kuckuck_status"]
+        assert st is not None and st.readOnlyHint is True
+
 
 class TestPromptDiscoverability:
     async def test_registered_prompts_match_exactly(self, mcp_client: KuckuckClient) -> None:
