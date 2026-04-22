@@ -55,8 +55,12 @@ ner = [
 ]
 tests = [
     "pytest==9.0.3",
+    "pytest-asyncio==1.3.0",
     "syrupy==5.1.0",
     "hypothesis==6.152.1"
+]
+mcp = [
+    "fastmcp>=3"
 ]
 linting = [
     "pylint==4.0.5",
@@ -93,6 +97,7 @@ Homepage = "https://github.com/Hochfrequenz/kuckuck"
 
 [project.scripts]
 kuckuck = "kuckuck.__main__:main"
+kuckuck-mcp = "kuckuck_mcp.server:main"
 
 [tool.black]
 line-length = 120
@@ -115,6 +120,8 @@ disable = [
 ]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "snapshot: mark a test as a snapshot test",
     "ner: integration tests that load the real GLiNER model (slow, opt-in via -m ner)"
