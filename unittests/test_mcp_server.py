@@ -128,18 +128,20 @@ async def _cancel_handler(  # pylint: disable=unused-argument
 
 
 class TestServerSetup:
-    async def test_all_four_tools_are_registered(self, mcp_client: KuckuckClient) -> None:
-        # Sanity check via the in-process Client: list_tools() returns the
-        # registered MCP tools so we know the decorator wiring took.
+    async def test_registered_tools_match_exactly(self, mcp_client: KuckuckClient) -> None:
+        # Set-equality (not subset) so adding/removing a tool without
+        # updating this assertion turns the build red. That is the point:
+        # the previous subset-check let kuckuck_fetch_model land without
+        # this test noticing.
         tools = await mcp_client.list_tools()
         names = {tool.name for tool in tools}
-        expected = {
+        assert names == {
             "kuckuck_pseudonymize",
             "kuckuck_restore",
+            "kuckuck_fetch_model",
             "kuckuck_list_detectors",
             "kuckuck_status",
         }
-        assert expected.issubset(names)
 
     async def test_server_carries_kuckuck_instructions(self) -> None:
         server = build_server()
@@ -149,18 +151,16 @@ class TestServerSetup:
 
 
 class TestPromptDiscoverability:
-    async def test_three_prompts_are_registered(self, mcp_client: KuckuckClient) -> None:
-        # Prompts surface as quick-actions in MCP clients (Claude Desktop /
-        # Code show them in the slash-command picker). They are the
-        # discoverability layer on top of the tools.
+    async def test_registered_prompts_match_exactly(self, mcp_client: KuckuckClient) -> None:
+        # Set-equality. See TestServerSetup for the reasoning.
         prompts = await mcp_client.list_prompts()
         names = {p.name for p in prompts}
-        expected = {
+        assert names == {
+            "setup_kuckuck",
             "pseudonymize_before_reading",
             "diagnose_kuckuck_setup",
             "explain_kuckuck_tokens",
         }
-        assert expected.issubset(names)
 
     async def test_pseudonymize_prompt_renders_with_file_path(self, mcp_client: KuckuckClient, tmp_path: Path) -> None:
         result = await mcp_client.get_prompt(
@@ -450,10 +450,9 @@ class TestFetchModelTool:
 
 
 class TestSetupPrompt:
-    async def test_setup_prompt_is_registered(self, mcp_client: KuckuckClient) -> None:
-        prompts = await mcp_client.list_prompts()
-        names = {p.name for p in prompts}
-        assert "setup_kuckuck" in names
+    # Registration coverage for setup_kuckuck lives in
+    # TestPromptDiscoverability::test_registered_prompts_match_exactly;
+    # this class only asserts the prompt CONTENT.
 
     async def test_setup_prompt_mentions_all_three_setup_steps(self, mcp_client: KuckuckClient) -> None:
         result = await mcp_client.get_prompt("setup_kuckuck")
