@@ -381,10 +381,13 @@ class TestFormatFlag:
 
 
 class TestNerFlag:
+    # The run pipeline lives in kuckuck.runner; patch the names there
+    # because both __main__ and runner did `from kuckuck.detectors.ner
+    # import is_gliner_installed` which copies the reference.
     def test_run_ner_without_gliner_exits_model_missing(
         self, tmp_path: Path, key_file: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: False)
+        monkeypatch.setattr("kuckuck.runner.is_gliner_installed", lambda: False)
         source = tmp_path / "doc.txt"
         source.write_text("Kontakt max@firma.de", encoding="utf-8")
         result = runner.invoke(app, ["run", str(source), "--key-file", str(key_file), "--ner"])
@@ -394,8 +397,8 @@ class TestNerFlag:
     def test_run_ner_without_model_exits_model_missing(
         self, tmp_path: Path, key_file: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
-        monkeypatch.setattr("kuckuck.__main__.is_model_available", lambda: False)
+        monkeypatch.setattr("kuckuck.runner.is_gliner_installed", lambda: True)
+        monkeypatch.setattr("kuckuck.runner.is_model_available", lambda: False)
         source = tmp_path / "doc.txt"
         source.write_text("Kontakt max@firma.de", encoding="utf-8")
         result = runner.invoke(app, ["run", str(source), "--key-file", str(key_file), "--ner"])
@@ -413,7 +416,7 @@ class TestNerFlag:
             called["checked"] = True
             return False
 
-        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", fake_check)
+        monkeypatch.setattr("kuckuck.runner.is_gliner_installed", fake_check)
         source = tmp_path / "doc.txt"
         source.write_text("Kontakt max@firma.de", encoding="utf-8")
         result = runner.invoke(app, ["run", str(source), "--key-file", str(key_file)])
@@ -428,8 +431,8 @@ class TestNerFlag:
         # We use a fake NerDetector to avoid loading the real model.
         from kuckuck.detectors.ner import NerDetector
 
-        monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
-        monkeypatch.setattr("kuckuck.__main__.is_model_available", lambda: True)
+        monkeypatch.setattr("kuckuck.runner.is_gliner_installed", lambda: True)
+        monkeypatch.setattr("kuckuck.runner.is_model_available", lambda: True)
         monkeypatch.setattr(
             NerDetector,
             "_load",

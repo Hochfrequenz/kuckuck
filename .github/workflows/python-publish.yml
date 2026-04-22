@@ -19,7 +19,10 @@ name: Upload Python Package
 
 on:
   release:
-    types: [created, edited]
+    # 'published' fires once per release; 'created' / 'edited' would
+    # double-trigger on draft + publish or on metadata edits and try
+    # to re-upload the same version (PyPI rejects, but it is CI noise).
+    types: [published]
 
 jobs:
   tests:

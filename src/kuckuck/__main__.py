@@ -16,6 +16,10 @@ Usage highlights — details in ``--help`` and in :mod:`kuckuck.__init__`.
 
 ``kuckuck init-key``
     Generate a fresh master secret at ``~/.config/kuckuck/key``.
+
+This module is the typer wrapper. The actual run-pipeline lives in
+:mod:`kuckuck.runner` and stays typer-free so the library API works
+without the ``[cli]`` extra installed.
 """
 
 from __future__ import annotations
@@ -32,31 +36,16 @@ from pydantic import SecretStr
 from kuckuck.config import DEFAULT_KEY_PATH, PROJECT_KEY_NAME, KeyNotFoundError, init_key, load_key
 from kuckuck.detectors.ner import (
     DEFAULT_MODEL_ID,
+    NerModelMissingError,
+    NerNotInstalledError,
     default_cache_root,
-    default_model_path,
     is_gliner_installed,
     is_model_available,
 )
-from kuckuck.mapping import Mapping, MappingCorruptError, load_mapping, save_mapping
-from kuckuck.preprocessors import (
-    EmlPreprocessor,
-    MarkdownPreprocessor,
-    MsgPreprocessor,
-    Preprocessor,
-    TextPreprocessor,
-    XmlPreprocessor,
-)
-from kuckuck.pseudonymize import (
-    PseudonymizeResult,
-    build_default_detectors,
-    pseudonymize_msg_file,
-    pseudonymize_text,
-    restore_text,
-)
-
-# pseudonymize_msg_file lives in kuckuck.pseudonymize because it shares the
-# detector / mapping / counter plumbing with pseudonymize_text. The CLI
-# uses it for --format msg where the input is a binary OLE compound doc.
+from kuckuck.mapping import Mapping, MappingCorruptError, load_mapping
+from kuckuck.options import RunOptions
+from kuckuck.pseudonymize import build_default_detectors, restore_text
+from kuckuck.runner import run_pseudonymize
 
 app = typer.Typer(
     help="Lokale Pseudonymisierung personenbezogener Daten vor der Weitergabe an Cloud-LLMs.",
@@ -78,42 +67,6 @@ EXIT_MAPPING_WRONG_KEY = 6
 EXIT_MODEL_MISSING = 7
 
 
-#: Map ``--format`` choices to their preprocessor implementations.
-_PREPROCESSORS: dict[str, type[Preprocessor]] = {
-    "text": TextPreprocessor,
-    "eml": EmlPreprocessor,
-    "msg": MsgPreprocessor,
-    "md": MarkdownPreprocessor,
-    "xml": XmlPreprocessor,
-}
-
-#: Auto-detection table. Suffix lookup is case-insensitive.
-_FORMAT_BY_SUFFIX: dict[str, str] = {
-    ".eml": "eml",
-    ".msg": "msg",
-    ".md": "md",
-    ".markdown": "md",
-    ".xml": "xml",
-    ".html": "xml",  # parses fine as XML for the structural walk
-}
-
-
-def _select_preprocessor(format_name: str, path: Path) -> Preprocessor:
-    """Resolve ``--format`` to a concrete preprocessor instance.
-
-    ``--format auto`` (the default) uses the file suffix to decide;
-    everything else picks the named entry from :data:`_PREPROCESSORS`.
-    Unknown suffixes fall back to the plain-text preprocessor so the
-    default behaviour stays compatible with PR 1 / PR 2.
-    """
-    if format_name == "auto":
-        format_name = _FORMAT_BY_SUFFIX.get(path.suffix.lower(), "text")
-    cls = _PREPROCESSORS.get(format_name)
-    if cls is None:
-        raise typer.BadParameter(f"Unknown --format '{format_name}'")
-    return cls()
-
-
 def _load_mapping_or_exit(master: SecretStr, path: Path) -> Mapping:
     """Wrapper around :func:`load_mapping` that turns crypto errors into friendly CLI output."""
     try:
@@ -123,7 +76,7 @@ def _load_mapping_or_exit(master: SecretStr, path: Path) -> Mapping:
         raise typer.Exit(EXIT_MAPPING_CORRUPT) from exc
     except InvalidTag as exc:
         typer.echo(
-            f"Could not decrypt mapping: {path}\n" f"The key does not match the one used to create this mapping.",
+            f"Could not decrypt mapping: {path}\nThe key does not match the one used to create this mapping.",
             err=True,
         )
         raise typer.Exit(EXIT_MAPPING_WRONG_KEY) from exc
@@ -132,13 +85,6 @@ def _load_mapping_or_exit(master: SecretStr, path: Path) -> Mapping:
 def _sidecar_path(file_path: Path) -> Path:
     """Return the ``.kuckuck-map.enc`` path that lives next to *file_path*."""
     return file_path.with_suffix(file_path.suffix + ".kuckuck-map.enc")
-
-
-def _read_denylist(path: Path | None) -> list[str]:
-    if path is None:
-        return []
-    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
-    return [line for line in lines if line and not line.startswith("#")]
 
 
 @app.command("init-key")
@@ -170,7 +116,7 @@ def cmd_init_key(
 
 
 @app.command("run")
-def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     paths: list[Path] = typer.Argument(..., exists=True, help="Files to pseudonymize in place."),
     key_file: Path | None = typer.Option(None, "--key-file", "-k", help="Override key lookup."),
     output_dir: Path | None = typer.Option(
@@ -211,131 +157,69 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     By default each file is overwritten in place and a matching
     ``<file>.kuckuck-map.enc`` sidecar is written next to it.
     """
+    options = RunOptions(
+        key_file=key_file,
+        output_dir=output_dir,
+        dry_run=dry_run,
+        sequential_tokens=sequential_tokens,
+        denylist=denylist,
+        phone_region=phone_region,
+        format=format_,
+        ner=ner,
+    )
     try:
-        master = load_key(key_file)
+        run_pseudonymize(paths, options, progress_writer=_cli_progress_writer)
     except KeyNotFoundError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(EXIT_KEY_NOT_FOUND) from exc
-
-    if ner:
-        # Hard error path: when the user opts in via the flag we do not want
-        # silent regex-only fallback. The library API stays soft.
-        if not is_gliner_installed():
-            typer.echo(
-                "NER requested via --ner but the optional 'gliner' package is not installed.\n"
-                "Install it via: pip install 'kuckuck[ner]'",
-                err=True,
-            )
-            raise typer.Exit(EXIT_MODEL_MISSING)
-        if not is_model_available():
-            typer.echo(
-                f"NER requested via --ner but no model was found at {default_model_path()}.\n"
-                "Download it via: kuckuck fetch-model",
-                err=True,
-            )
-            raise typer.Exit(EXIT_MODEL_MISSING)
-        if sequential_tokens:
-            # Sequential tokens are per-document counters, so the same
-            # person gets a different [[PERSON_N]] in each file. That
-            # defeats the main reason people enable NER (cross-doc name
-            # consistency). Warn but do not block - the user might want
-            # the shorter tokens for a one-shot job.
-            typer.echo(
-                "Warning: --ner with --sequential-tokens loses cross-document "
-                "stability for PERSON tokens. Drop --sequential-tokens for "
-                "stable hashes across files.",
-                err=True,
-            )
-
-    denylist_entries = _read_denylist(denylist)
-    detectors = build_default_detectors(denylist=denylist_entries, phone_region=phone_region, use_ner=ner)
-
-    if output_dir is not None:
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-    for path in paths:
-        preprocessor = _select_preprocessor(format_, path)
-        target_text = output_dir / path.name if output_dir is not None else path
-        target_map = _sidecar_path(target_text)
-        mapping = _load_mapping_or_exit(master, target_map) if target_map.is_file() else Mapping()
-        result = _pseudonymize_one(
-            path=path,
-            preprocessor=preprocessor,
-            master=master,
-            detectors=detectors,
-            mapping=mapping,
-            sequential_tokens=sequential_tokens,
-        )
-        if dry_run:
-            typer.echo(f"--- {path} -> {len(result.replaced)} replacements ({preprocessor.name}) ---")
-            typer.echo(result.text)
-            continue
-        target_text.write_text(result.text, encoding="utf-8")
-        save_mapping(master, result.mapping, target_map)
-        typer.echo(
-            f"{path} -> {target_text} ({len(result.replaced)} replacements, "
-            f"format: {preprocessor.name}, map: {target_map})"
-        )
-
-
-def _pseudonymize_one(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    *,
-    path: Path,
-    preprocessor: Preprocessor,
-    master: SecretStr,
-    detectors: list,  # type: ignore[type-arg]
-    mapping: Mapping,
-    sequential_tokens: bool,
-) -> PseudonymizeResult:
-    """Read *path*, run the right pipeline, return the pseudonymize result.
-
-    Branches on the preprocessor type so MsgPreprocessor (which needs
-    binary input) takes the dedicated :func:`pseudonymize_msg_file` path
-    while text-based preprocessors keep the existing UTF-8 read.
-    Friendly errors translate library exceptions into typer.Exit(2).
-    """
-    if isinstance(preprocessor, MsgPreprocessor):
-        if not path.is_file():
-            typer.echo(f"{path}: not a regular file (refusing to read)", err=True)
-            raise typer.Exit(EXIT_USAGE)
-        try:
-            return pseudonymize_msg_file(
-                path,
-                master,
-                detectors,
-                mapping=mapping,
-                sequential_tokens=sequential_tokens,
-            )
-        except (OSError, ValueError) as exc:
-            typer.echo(f"{path}: cannot parse as Outlook .msg: {exc}", err=True)
-            raise typer.Exit(EXIT_USAGE) from exc
-
-    try:
-        text = path.read_text(encoding="utf-8")
+    except NerNotInstalledError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(EXIT_MODEL_MISSING) from exc
+    except NerModelMissingError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(EXIT_MODEL_MISSING) from exc
+    except FileNotFoundError as exc:
+        # _run_one raises FileNotFoundError when --format msg is used on
+        # a non-regular file (refusing to follow weirdness like FIFOs).
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(EXIT_USAGE) from exc
     except UnicodeDecodeError as exc:
         typer.echo(
-            f"{path}: cannot decode as UTF-8 ({exc}). " "If this is an Outlook .msg file, pass --format msg.",
+            f"Cannot decode input as UTF-8 ({exc}). " "If this is an Outlook .msg file, pass --format msg.",
+            err=True,
+        )
+        raise typer.Exit(EXIT_USAGE) from exc
+    except (MappingCorruptError, InvalidTag) as exc:
+        # Mapping loading inside the runner; surface the same exit codes
+        # as the standalone _load_mapping_or_exit helper does for restore.
+        if isinstance(exc, MappingCorruptError):
+            typer.echo(f"Mapping file is corrupt: {exc}", err=True)
+            raise typer.Exit(EXIT_MAPPING_CORRUPT) from exc
+        typer.echo(
+            f"Could not decrypt mapping: {exc}\nThe key does not match the one used to create this mapping.",
+            err=True,
+        )
+        raise typer.Exit(EXIT_MAPPING_WRONG_KEY) from exc
+    except (OSError, ValueError) as exc:
+        # Catch-all for runner-side errors: bad .msg, parse errors,
+        # invalid format names. SyntaxError from lxml is a subclass of
+        # ValueError? No - it inherits from Exception via SyntaxError;
+        # we listed both via the lxml path inside _run_one.
+        typer.echo(f"{exc}", err=True)
+        raise typer.Exit(EXIT_USAGE) from exc
+    except SyntaxError as exc:
+        # lxml.etree.XMLSyntaxError inherits from SyntaxError; raised
+        # when --format xml is used on something that does not parse.
+        typer.echo(
+            f"Invalid XML document: {exc}. Try --format text to bypass structural parsing.",
             err=True,
         )
         raise typer.Exit(EXIT_USAGE) from exc
 
-    try:
-        return pseudonymize_text(
-            text,
-            master,
-            detectors,
-            mapping=mapping,
-            sequential_tokens=sequential_tokens,
-            preprocessor=preprocessor,
-        )
-    except SyntaxError as exc:
-        # lxml.etree.XMLSyntaxError inherits from SyntaxError; using the
-        # base type lets us avoid pulling lxml symbols at the CLI level.
-        typer.echo(
-            f"{path}: invalid {preprocessor.name} document: {exc}. " "Try --format text to bypass structural parsing.",
-            err=True,
-        )
-        raise typer.Exit(EXIT_USAGE) from exc
+
+def _cli_progress_writer(line: str) -> None:
+    """Adapter so the runner can stream per-file status to typer.echo."""
+    typer.echo(line)
 
 
 @app.command("restore")

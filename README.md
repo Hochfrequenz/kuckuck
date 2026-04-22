@@ -11,6 +11,28 @@
 
 Lokale Pseudonymisierung personenbezogener Daten in Textdateien, **bevor** du sie an Cloud-LLMs gibst.
 
+## Wie funktioniert das?
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Kuckuck
+    participant Mapping as Mapping-Sidecar<br/>(verschlüsselt)
+    participant LLM as Cloud-LLM<br/>(Claude, GPT, ...)
+
+    User->>Kuckuck: brief.eml (mit max@firma.de, Anna)
+    Kuckuck->>Mapping: speichert Originale,<br/>vergibt Token
+    Kuckuck-->>User: brief.eml mit [[EMAIL_...]], [[PERSON_...]]
+    User->>LLM: pseudonymisierten Text
+    LLM-->>User: Antwort mit den gleichen Token
+    User->>Kuckuck: restore brief.eml
+    Kuckuck->>Mapping: liest Originale
+    Kuckuck-->>User: Antwort mit echten Namen
+```
+
+Der Master-Key bleibt lokal, der Mapping-Sidecar (`*.kuckuck-map.enc`) ist AES-GCM-verschlüsselt.
+Ohne Key keine Rückführung — siehe Abschnitt "Umkehrbarkeit".
+
 Was Kuckuck **ist**:
 
 - Ein lokales CLI- und Library-Tool in Python.
