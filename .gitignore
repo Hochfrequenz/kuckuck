@@ -140,3 +140,4 @@ src/_kuckuck_version.py
 *.kuckuck-map.enc
 *.pseudonymized.*
 kuckuck-log.jsonl
+.claude/

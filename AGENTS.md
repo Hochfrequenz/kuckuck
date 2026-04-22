@@ -96,6 +96,21 @@ Beim Anfassen der Preprocessoren (`src/kuckuck/preprocessors/`):
 - Neue HTML-Parser müssen `<script>`/`<style>`/`<noscript>` strippen, bevor sie `.text()` aufrufen (siehe `eml.py:_html_to_text`).
 - Reassemble-Pfade müssen format-spezifische Strukturen (CDATA, Multipart-Boundaries, YAML-Frontmatter) erhalten - siehe Snapshot-Tests in `unittests/test_preprocessors.py`.
 
+Beim Anfassen des MCP-Servers (`src/kuckuck_mcp/`):
+
+- **Vor jeder Änderung die FastMCP-Doku lesen.**
+  Einstieg: https://gofastmcp.com/llms.txt mit dem Index aller Doc-Pages.
+  Konkrete Pages je nach Aufgabe:
+  - https://gofastmcp.com/servers/tools.md (Decorator-API, Return-Types, `ToolError`)
+  - https://gofastmcp.com/servers/elicitation.md (`ctx.elicit`, `match` über `AcceptedElicitation`/`DeclinedElicitation`/`CancelledElicitation`)
+  - https://gofastmcp.com/servers/testing.md (in-process Client + `FastMCPTransport`)
+  - https://gofastmcp.com/clients/elicitation.md (`elicitation_handler` für Tests)
+- Nicht aus dem Gedächtnis raten - die API hat viele Detailregeln (z. B. `response_type=None` ist in v3 deprecated, `Literal` ist gegenüber `list[str]` bevorzugt), die zwischen v2 und v3 nicht-trivial gewechselt sind.
+- Errors via `raise ToolError("...")` für user-facing Fehlermeldungen, nicht via Return-String.
+- **Tool-Return-Types als pydantic `BaseModel`, nicht als `TypedDict` oder rohes `dict`.**
+  FastMCP serialisiert pydantic-Models nativ in das MCP-Tool-Result-JSON-Schema, der Client sieht typisierte Felder mit Descriptions statt opaque Dicts, und der Server validiert seinen Output beim Rausschicken.
+  pydantic + FastMCP ist der Standard-Stack für strukturierte Tool-Antworten.
+
 Beim Anfassen der Library-API (`runner.py`, `options.py`):
 
 - `RunOptions` ist `extra='forbid'` - neue Felder explizit ergänzen, nicht via Subclass schmuggeln.

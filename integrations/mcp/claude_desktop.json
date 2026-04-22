@@ -1,0 +1,12 @@
+{
+  "_comment": "Add this block to your Claude Desktop config (macOS: ~/Library/Application Support/Claude/claude_desktop_config.json, Windows: %APPDATA%\\Claude\\claude_desktop_config.json). Restart Claude Desktop after editing. Replace /absolute/path/to/.kuckuck-key with your actual key file.",
+  "mcpServers": {
+    "kuckuck": {
+      "command": "kuckuck-mcp",
+      "args": [],
+      "env": {
+        "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"
+      }
+    }
+  }
+}

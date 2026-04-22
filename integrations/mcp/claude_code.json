@@ -1,0 +1,12 @@
+{
+  "_comment": "Add this block to ~/.claude/settings.json (global) or .claude/settings.json (project-local). Claude Code picks it up automatically on next startup. Replace /absolute/path/to/.kuckuck-key with your actual key file.",
+  "mcpServers": {
+    "kuckuck": {
+      "command": "kuckuck-mcp",
+      "args": [],
+      "env": {
+        "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"
+      }
+    }
+  }
+}
