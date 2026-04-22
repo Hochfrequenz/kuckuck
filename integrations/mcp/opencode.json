@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "_comment": "Add this block to opencode.json (project-local) or ~/.config/opencode/opencode.json (global). Restart opencode after editing.",
+  "mcp": {
+    "kuckuck": {
+      "type": "local",
+      "command": ["kuckuck-mcp"],
+      "enabled": true,
+      "environment": {
+        "_hint": "Set KUCKUCK_KEY_FILE here if your key is not in the default lookup chain.",
+        "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"
+      }
+    }
+  }
+}

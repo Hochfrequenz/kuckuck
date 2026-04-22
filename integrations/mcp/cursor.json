@@ -1,0 +1,9 @@
+{
+  "_comment": "Add this block to ~/.cursor/mcp.json (global) or .cursor/mcp.json (project-local). Restart Cursor after editing.",
+  "mcpServers": {
+    "kuckuck": {
+      "command": "kuckuck-mcp",
+      "args": []
+    }
+  }
+}

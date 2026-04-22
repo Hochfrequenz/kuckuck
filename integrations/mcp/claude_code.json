@@ -1,0 +1,9 @@
+{
+  "_comment": "Add this block to ~/.claude/settings.json (global) or .claude/settings.json (project-local). Claude Code picks it up automatically on next startup.",
+  "mcpServers": {
+    "kuckuck": {
+      "command": "kuckuck-mcp",
+      "args": []
+    }
+  }
+}
