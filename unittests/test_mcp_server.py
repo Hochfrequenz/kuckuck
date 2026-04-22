@@ -252,6 +252,39 @@ class TestPseudonymizeTool:
                 arguments={"file_path": str(source), "format": "weirdo"},
             )
 
+    async def test_pseudonymize_default_ner_auto_falls_back_to_regex(
+        self, mcp_client: KuckuckClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Default ner=None means "auto-detect": enable NER if available,
+        # otherwise silently regex-only. This must NOT crash on systems
+        # without gliner installed - that would break every default
+        # kuckuck_pseudonymize call for users who only installed [mcp].
+        monkeypatch.setattr("kuckuck_mcp.server.is_gliner_installed", lambda: False)
+        source = tmp_path / "doc.txt"
+        source.write_text("Kontakt max@firma.de", encoding="utf-8")
+        result = await mcp_client.call_tool(
+            "kuckuck_pseudonymize", arguments={"file_path": str(source)}
+        )
+        # Email regex still fires; just no PERSON detection.
+        assert "ok" in result.data
+        assert "[[EMAIL_" in source.read_text(encoding="utf-8")
+
+    async def test_pseudonymize_explicit_ner_true_still_hard_fails(
+        self, mcp_client: KuckuckClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Explicit ner=True keeps the strict semantics: if NER cannot
+        # actually run, the model gets a clear ToolError instead of a
+        # silent regex-only fallback. This is for callers that depend
+        # on PERSON tokens being present.
+        monkeypatch.setattr("kuckuck.runner.is_gliner_installed", lambda: False)
+        source = tmp_path / "doc.txt"
+        source.write_text("Hi Hans Mueller", encoding="utf-8")
+        with pytest.raises(ToolError, match="kuckuck\\[ner\\]"):
+            await mcp_client.call_tool(
+                "kuckuck_pseudonymize",
+                arguments={"file_path": str(source), "ner": True},
+            )
+
     async def test_pseudonymize_refuses_path_outside_workspace(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

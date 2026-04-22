@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Built on FastMCP `>= 3` (consistent with the Hochfrequenz MCP stack).
   Four stdio tools: `kuckuck_pseudonymize`, `kuckuck_restore` (gated behind FastMCP elicitation), `kuckuck_list_detectors`, `kuckuck_status` (with aggregated `problems`-list and remediation hints, pattern from `Hochfrequenz/sap-mcp-config`).
   Three discoverability prompts (`pseudonymize_before_reading`, `diagnose_kuckuck_setup`, `explain_kuckuck_tokens`) so MCP clients surface the safe workflows as quick-actions.
+  `kuckuck_pseudonymize` defaults to `ner=auto` — best-effort PERSON detection when the `[ner]` extra is installed and the model is on disk, regex-only fallback otherwise (no crash on minimal setups).
   All tools are `file_path`-based — a text-input variant would have leaked PII through the tool argument.
   No MCP resources exposed (mapping inspection stays local via `kuckuck inspect`).
 - Setup guides plus example configs for Claude Desktop, Claude Code, Cursor and opencode in `integrations/mcp/`.

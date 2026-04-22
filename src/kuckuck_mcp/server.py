@@ -161,6 +161,8 @@ def build_server() -> FastMCP:
         instructions=(
             "Local-only PII pseudonymization. Use kuckuck_pseudonymize on any "
             ".eml / .msg / .md / .xml / text file BEFORE you read its contents. "
+            "By default it auto-enables NER (PERSON-name detection) when "
+            "available, falling back to regex-only otherwise. "
             "kuckuck_restore returns cleartext PII to the client and triggers a "
             "user-confirmation elicitation - do not call it for inspection, only "
             "in deliberate restore workflows."
@@ -171,7 +173,7 @@ def build_server() -> FastMCP:
     def kuckuck_pseudonymize(
         file_path: str,
         format: Literal["auto", "text", "eml", "msg", "md", "xml"] = "auto",
-        ner: bool = False,
+        ner: bool | None = None,
         dry_run: bool = False,
     ) -> str:
         """Pseudonymize a file in place; write the encrypted mapping sidecar next to it.
@@ -187,18 +189,31 @@ def build_server() -> FastMCP:
         format that was applied. The cleartext content of the file does NOT
         flow back through this tool - only metadata.
 
-        Set ``ner=True`` to enable the GLiNER PERSON detector (requires
-        the ``kuckuck[ner]`` extra and a model fetched via the CLI command
-        ``kuckuck fetch-model``). Use ``dry_run=True`` to compute the result
-        without writing anything to disk.
+        ``ner`` controls the GLiNER PERSON detector:
+
+        * ``None`` (default) -- auto: enable NER when both the gliner
+          package and the model snapshot are available, fall back to
+          regex-only otherwise. This gives best-effort results out of
+          the box without crashing on systems that didn't install the
+          [ner] extra.
+        * ``True`` -- explicit opt-in. Raises a ToolError when gliner or
+          the model is missing (use this when downstream behaviour
+          depends on PERSON tokens).
+        * ``False`` -- explicit opt-out, regex detectors only.
+
+        ``dry_run=True`` computes the result without writing anything.
         """
         path = _ensure_path_in_workspace(file_path)
         if not path.is_file():
             raise ToolError(f"{file_path}: not a regular file")
+        # Resolve auto-mode now so the run_pseudonymize call sees a
+        # concrete bool: explicit True/False stays as-is, None becomes
+        # True iff NER is fully usable on this system.
+        effective_ner = ner if ner is not None else (is_gliner_installed() and is_model_available())
         try:
             results = run_pseudonymize(
                 [path],
-                RunOptions(format=format, ner=ner, dry_run=dry_run),
+                RunOptions(format=format, ner=effective_ner, dry_run=dry_run),
             )
         except KeyNotFoundError as exc:
             raise ToolError(

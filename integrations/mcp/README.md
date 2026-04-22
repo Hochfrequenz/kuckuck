@@ -66,7 +66,7 @@ kuckuck init-key --key-file PATH    # eigener Pfad
 
 | Tool | Was es macht | PII-Leak ins Modell? |
 |---|---|---|
-| `kuckuck_pseudonymize(file_path, format=auto, ner=false, dry_run=false)` | Pseudonymisiert die Datei in-place, schreibt Mapping-Sidecar daneben | Nein - nur Status-Line ("ok: foo.eml -> 4 replacements") |
+| `kuckuck_pseudonymize(file_path, format=auto, ner=auto, dry_run=false)` | Pseudonymisiert die Datei in-place, schreibt Mapping-Sidecar daneben. `ner=auto` (default) nutzt NER wenn verfügbar, fällt auf Regex-only zurück wenn `gliner` oder Modell fehlen. `ner=true` erzwingt NER (Tool-Error wenn Setup fehlt), `ner=false` deaktiviert NER explizit. | Nein - nur Status-Line ("ok: foo.eml -> 4 replacements") |
 | `kuckuck_restore(file_path)` | Restored Klartext aus dem Sidecar-Mapping | Ja - **gated über FastMCP-Elicitation**: User muss aktiv "yes" bestätigen |
 | `kuckuck_list_detectors()` | Listet aktive Detektoren (email, phone, handle, term, ner) | Nein |
 | `kuckuck_status()` | Self-Diagnose (key found, gliner installiert, model on disk) | Nein |
