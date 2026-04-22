@@ -111,13 +111,19 @@ def main(binary: str) -> int:  # pylint: disable=too-many-return-statements
 
 
 def _check_mcp_subcommand(binary: str) -> int:
-    """Assert that 'kuckuck mcp --help' works and lists 'serve'.
+    """Assert that 'kuckuck mcp' is registered AND the server can actually boot.
 
-    We cannot actually start the MCP server from a smoke test - it blocks
-    waiting on stdio. Instead we exercise the subcommand's help output,
-    which forces Typer to register the sub-app and catches the common
-    regressions: subcommand group missing, help text broken, the binary
-    built without --collect-data kuckuck_mcp or --collect-all fastmcp.
+    - ``kuckuck mcp --help`` lists ``serve`` (Typer registration intact).
+    - ``kuckuck mcp serve`` started with empty stdin runs the deferred-import
+      codepath, reaches the FastMCP stdio loop, fails fast on the unparseable
+      JSON-RPC payload, and exits. The stderr must not contain
+      ``ModuleNotFoundError`` / ``ImportError`` - those would indicate a
+      PyInstaller bundling bug (e.g. missing --collect-all fastmcp).
+
+    The ``--help`` path alone is NOT enough: Typer/Click resolve ``--help``
+    before the command body executes, so the deferred import of
+    ``kuckuck_mcp.server`` is never triggered and a broken bundle would pass
+    silently. The boot-with-EOF check forces the real codepath.
     """
     help_result = _run(binary, ["mcp", "--help"])
     if help_result.returncode != 0:
@@ -126,10 +132,24 @@ def _check_mcp_subcommand(binary: str) -> int:
     if "serve" not in help_result.stdout:
         print("kuckuck mcp --help did not list 'serve' subcommand", file=sys.stderr)
         return 1
-    serve_help = _run(binary, ["mcp", "serve", "--help"])
-    if serve_help.returncode != 0:
-        print("kuckuck mcp serve --help failed", file=sys.stderr)
+
+    try:
+        boot = subprocess.run(
+            [binary, "mcp", "serve"],
+            input="",
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=20,
+        )
+    except subprocess.TimeoutExpired:
+        print("kuckuck mcp serve did not exit within 20s on empty stdin", file=sys.stderr)
         return 1
+    combined_stderr = boot.stderr or ""
+    for marker in ("ModuleNotFoundError", "ImportError: "):
+        if marker in combined_stderr:
+            print(f"kuckuck mcp serve stderr contains '{marker}':\n{combined_stderr}", file=sys.stderr)
+            return 1
     return 0
 
 
