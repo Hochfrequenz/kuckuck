@@ -131,6 +131,88 @@ class TestMergeHookIntoSettings:
         with pytest.raises(ValueError, match="settings.hooks is not an object"):
             install_hook.merge_hook_into_settings(settings, command="/tmp/kuckuck-pseudo.sh")
 
+    def test_does_not_mutate_settings_when_returning_false(self) -> None:
+        # Idempotent re-install: the hook is already present. The input
+        # must not gain empty scaffolding as a side effect.
+        seed = {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Read|Edit|Grep",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "/custom/path/to/kuckuck-pseudo.sh",
+                            }
+                        ],
+                    }
+                ]
+            },
+            "other_key": "preserved",
+        }
+        snapshot = json.dumps(seed, sort_keys=True)
+        changed = install_hook.merge_hook_into_settings(seed, command="/tmp/kuckuck-pseudo.sh")
+        assert changed is False
+        assert json.dumps(seed, sort_keys=True) == snapshot
+
+    def test_does_not_inject_empty_hooks_on_no_op(self) -> None:
+        # A plain "already-installed" dict check ruled above; verify also
+        # that a FRESH settings dict whose user-hooks-list-is-absent
+        # stays empty when merge decides nothing is needed. This happens
+        # when the dict has an unrelated kuckuck-like command inline.
+        seed: dict[str, Any] = {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "/usr/local/bin/kuckuck-pseudo.sh",
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        snapshot = json.dumps(seed, sort_keys=True)
+        changed = install_hook.merge_hook_into_settings(seed, command="/tmp/kuckuck-pseudo.sh")
+        assert changed is False
+        assert json.dumps(seed, sort_keys=True) == snapshot
+
+
+class TestKuckuckEntryDetection:
+    """The uninstaller must distinguish our own hook from unrelated user hooks."""
+
+    # Protected access is deliberate here: _is_kuckuck_entry is an internal
+    # helper whose exact detection semantics matter enough to exercise
+    # them directly instead of only through the merge/remove wrappers.
+    # pylint: disable=protected-access
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            '"$CLAUDE_PROJECT_DIR"/.claude/hooks/kuckuck-pseudo.sh',
+            "/home/u/.claude/hooks/kuckuck-pseudo.sh",
+            'powershell -NoProfile -ExecutionPolicy Bypass -File "C:/Users/u/.claude/hooks/kuckuck-pseudo.ps1"',
+            "/custom/path/to/kuckuck-pseudo.sh --verbose",
+        ],
+    )
+    def test_real_kuckuck_commands_match(self, command: str) -> None:
+        assert install_hook._is_kuckuck_entry({"command": command}) is True
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "echo 'will install kuckuck-pseudo.sh later'",
+            "cp legacy-hook.sh /tmp/kuckuck-pseudo.sh-backup",
+            "echo kuckuck-pseudo.ps1 is a cool name",
+        ],
+    )
+    def test_free_form_mentions_do_not_match(self, command: str) -> None:
+        # Preceding separator missing or not a path char - must not match.
+        assert install_hook._is_kuckuck_entry({"command": command}) is False
+
 
 class TestRemoveHookFromSettings:
     def test_noop_when_absent(self) -> None:
@@ -159,6 +241,30 @@ class TestRemoveHookFromSettings:
         install_hook.merge_hook_into_settings(settings, command="/tmp/kuckuck-pseudo.sh")
         install_hook.remove_hook_from_settings(settings)
         assert settings == {}
+
+    def test_preserves_user_hook_that_merely_mentions_the_filename(self) -> None:
+        # Regression for H4 review finding: a user hook whose command
+        # happens to contain "kuckuck-pseudo.sh" in free text (without a
+        # path separator in front) must survive --uninstall.
+        seed = {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "echo 'will install kuckuck-pseudo.sh later'",
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        snapshot = json.dumps(seed, sort_keys=True)
+        changed = install_hook.remove_hook_from_settings(seed)
+        assert changed is False
+        assert json.dumps(seed, sort_keys=True) == snapshot
 
 
 class TestCliInstallUninstall:
@@ -436,6 +542,11 @@ class TestHookScriptFailClosed:
         assert result.returncode == 2, result.stderr
         assert "Refusing to Read" in result.stderr
         assert "kuckuck_pseudonymize" in result.stderr
+        # Regression for H3 (rc=$? after `fi` captured 0 instead of the
+        # real exit code): the block message must surface kuckuck's
+        # actual key-not-found exit status (3), otherwise the
+        # troubleshooting anchor "(kuckuck exit 3)" is unreachable.
+        assert "exit 3" in result.stderr
 
     @jq_required
     def test_fail_open_env_var_lets_tool_through(self, tmp_path: Path, eml_file: Path) -> None:
@@ -485,6 +596,33 @@ class TestHookScriptFailClosed:
         )
         assert result.returncode == 2
         assert "jq not found" in result.stderr
+
+    @jq_required
+    def test_garbled_stdin_json_blocks(self, tmp_path: Path, eml_file: Path) -> None:
+        # Regression for H2 review finding: the shell script used to
+        # swallow jq parse failures via $(...) command substitution,
+        # leaving TOOL/FILE empty and silently exit-0ing. The result was
+        # a fail-open on malformed payloads. We build a PATH that has
+        # the real tools and send garbage on stdin.
+        _ = eml_file  # fixture only used to keep setup shape consistent
+        env = os.environ.copy()
+        env["PATH"] = f"{Path(_kuckuck_bin()).parent}{os.pathsep}{env.get('PATH', '')}"
+        # Route kuckuck past the key-found check even if the global key
+        # disappears: point HOME and KUCKUCK_KEY_FILE somewhere bogus so
+        # the fail-closed path is the jq one, not the kuckuck one.
+        env["HOME"] = str(tmp_path)
+        env["KUCKUCK_KEY_FILE"] = str(tmp_path / "no-such-key")
+        result = subprocess.run(
+            ["bash", str(_BUNDLED_SH)],
+            input="not a JSON payload at all",
+            text=True,
+            capture_output=True,
+            env=env,
+            check=False,
+            timeout=30,
+        )
+        assert result.returncode == 2
+        assert "failed to parse stdin as JSON" in result.stderr
 
     @jq_required
     def test_fail_open_still_works_when_kuckuck_missing(self, tmp_path: Path, eml_file: Path) -> None:
