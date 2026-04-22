@@ -71,7 +71,13 @@ jobs:
             local_dir='${HOME}/.cache/kuckuck/models/gliner_multi-v2.1')"
 
   smoke_test:
-    needs: build
+    # fetch_ner_model is in the needs list so the NER smoke test always runs
+    # against a populated model cache. Before the single-binary collapse a
+    # missing cache silently skipped the NER leg - fine back then because a
+    # separate slim variant was the ultimate safety net, but with one fat
+    # binary as the only artifact there is no slimmer fallback to catch a
+    # NER regression.
+    needs: [build, fetch_ner_model]
     strategy:
       fail-fast: false
       matrix:
