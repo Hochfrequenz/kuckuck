@@ -14,13 +14,11 @@ Diese Anleitung zeigt den Setup mit dem **Windows-Binary** - ohne Python, ohne p
 
 **1. Binary herunterladen** (einmalig pro Rechner):
 
-Lade von der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases/latest) die NER-Variante herunter - die erkennt Personennamen zusätzlich zu Mailadressen und Telefonnummern:
+Lade von der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases/latest) den Windows-Binary herunter - ein einziges File mit CLI, MCP-Server und PERSON-Namen-Erkennung:
 
 ```
-kuckuck_windows_ner_<version>.exe    (~ 300 MB)
+kuckuck_windows_<version>.exe    (~ 300 MB)
 ```
-
-Falls du keine Personenerkennung brauchst, reicht auch die Slim-Variante `kuckuck_windows_<version>.exe` (~ 30 MB).
 
 **2. Binary umbenennen und auf PATH legen** (damit `kuckuck` als Befehl verfügbar ist):
 
@@ -30,7 +28,7 @@ Im PowerShell-Terminal:
 # Zielordner anlegen
 New-Item -ItemType Directory -Path "$env:USERPROFILE\tools\kuckuck" -Force | Out-Null
 # Binary rüberschieben und auf "kuckuck.exe" umbenennen
-Move-Item -Path "$env:USERPROFILE\Downloads\kuckuck_windows_ner_*.exe" `
+Move-Item -Path "$env:USERPROFILE\Downloads\kuckuck_windows_*.exe" `
           -Destination "$env:USERPROFILE\tools\kuckuck\kuckuck.exe"
 # Ordner zur User-PATH hinzufuegen (permanent)
 $newPath = [Environment]::GetEnvironmentVariable("Path", "User") + ";$env:USERPROFILE\tools\kuckuck"
@@ -104,12 +102,12 @@ Falls etwas nicht klappt: **Troubleshooting** weiter unten.
 Unter macOS läuft der Binary identisch, nur mit anderer Datei und dem Extra-Schritt, das Gatekeeper-Quarantäne-Attribut zu entfernen.
 
 ```bash
-# NER-Variante empfohlen (300 MB, erkennt Personennamen)
-curl -LO https://github.com/Hochfrequenz/kuckuck/releases/latest/download/kuckuck_macos_arm64_ner_<version>
+# Ein Binary pro Plattform (~ 300 MB, enthaelt CLI + MCP + NER)
+curl -LO https://github.com/Hochfrequenz/kuckuck/releases/latest/download/kuckuck_macos_arm64_<version>
 # Quarantaene entfernen (sonst killt macOS das Binary kommentarlos)
-xattr -c kuckuck_macos_arm64_ner_*
+xattr -c kuckuck_macos_arm64_*
 # Umbenennen und ausfuehrbar machen
-mv kuckuck_macos_arm64_ner_* /usr/local/bin/kuckuck
+mv kuckuck_macos_arm64_* /usr/local/bin/kuckuck
 chmod +x /usr/local/bin/kuckuck
 
 # jq (falls nicht vorhanden)
@@ -154,7 +152,7 @@ Der Hook ist **Claude-Code-spezifisch**. Andere Clients (Cursor, Cline, Zed, ope
 | Nutzer-Rolle | Modell muss sich erinnern, das MCP-Tool zu nutzen | passiv, Nutzer muss nichts tun |
 | Schutz gegen | bewusst-konventionelle Pseudonymisierung | Vergesslichkeit + direkte Reads ohne Konvention |
 
-Best-Practice: **beide parallel installieren**. Wenn du beides willst, lade auf Windows zusätzlich `kuckuck-mcp_windows_ner_<version>.exe` herunter und folge der [MCP-Anleitung](../mcp/README.md).
+Best-Practice: **beide parallel aktivieren**. Ein einziger `kuckuck.exe` reicht - den MCP-Teil aktivierst du in der MCP-Client-Config mit `command: "kuckuck", args: ["mcp", "serve"]`. Siehe [MCP-Anleitung](../mcp/README.md).
 
 </details>
 

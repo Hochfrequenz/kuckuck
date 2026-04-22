@@ -14,37 +14,13 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            tox_env: build_executable
+            tox_env: build_executable_windows
             artifact: kuckuck_windows
             binary: kuckuck_windows.exe
           - os: macos-latest
             tox_env: build_executable_macos
             artifact: kuckuck_macos_arm64
             binary: kuckuck_macos_arm64
-          - os: windows-latest
-            tox_env: build_executable_ner
-            artifact: kuckuck_windows_ner
-            binary: kuckuck_windows_ner.exe
-          - os: macos-latest
-            tox_env: build_executable_macos_ner
-            artifact: kuckuck_macos_arm64_ner
-            binary: kuckuck_macos_arm64_ner
-          - os: windows-latest
-            tox_env: build_executable_mcp
-            artifact: kuckuck-mcp_windows
-            binary: kuckuck-mcp_windows.exe
-          - os: macos-latest
-            tox_env: build_executable_macos_mcp
-            artifact: kuckuck-mcp_macos_arm64
-            binary: kuckuck-mcp_macos_arm64
-          - os: windows-latest
-            tox_env: build_executable_ner_mcp
-            artifact: kuckuck-mcp_windows_ner
-            binary: kuckuck-mcp_windows_ner.exe
-          - os: macos-latest
-            tox_env: build_executable_macos_ner_mcp
-            artifact: kuckuck-mcp_macos_arm64_ner
-            binary: kuckuck-mcp_macos_arm64_ner
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -95,7 +71,13 @@ jobs:
             local_dir='${HOME}/.cache/kuckuck/models/gliner_multi-v2.1')"
 
   smoke_test:
-    needs: build
+    # fetch_ner_model is in the needs list so the NER smoke test always runs
+    # against a populated model cache. Before the single-binary collapse a
+    # missing cache silently skipped the NER leg - fine back then because a
+    # separate slim variant was the ultimate safety net, but with one fat
+    # binary as the only artifact there is no slimmer fallback to catch a
+    # NER regression.
+    needs: [build, fetch_ner_model]
     strategy:
       fail-fast: false
       matrix:
@@ -103,19 +85,9 @@ jobs:
           - os: windows-latest
             artifact: kuckuck_windows
             binary: kuckuck_windows.exe
-            ner: false
           - os: macos-latest
             artifact: kuckuck_macos_arm64
             binary: kuckuck_macos_arm64
-            ner: false
-          - os: windows-latest
-            artifact: kuckuck_windows_ner
-            binary: kuckuck_windows_ner.exe
-            ner: true
-          - os: macos-latest
-            artifact: kuckuck_macos_arm64_ner
-            binary: kuckuck_macos_arm64_ner
-            ner: true
     runs-on: ${{ matrix.os }}
     name: "Smoke Test (${{ matrix.artifact }})"
     steps:
@@ -135,8 +107,7 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: chmod +x dist/${{ matrix.binary }}
         shell: bash
-      - name: Restore GLiNER model cache (NER builds)
-        if: matrix.ner == true
+      - name: Restore GLiNER model cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/kuckuck/models
@@ -144,7 +115,6 @@ jobs:
       - name: Smoke Test
         run: python unittests/smoke_test_exe.py dist/${{ matrix.binary }}
       - name: NER Smoke Test
-        if: matrix.ner == true
         run: python unittests/smoke_test_exe_ner.py dist/${{ matrix.binary }}
         shell: bash
 
@@ -167,42 +137,6 @@ jobs:
           name: kuckuck_macos_arm64
           path: dist/macos
         continue-on-error: true
-      - name: Download Windows NER Executable
-        uses: actions/download-artifact@v8
-        with:
-          name: kuckuck_windows_ner
-          path: dist/windows_ner
-        continue-on-error: true
-      - name: Download macOS NER Executable
-        uses: actions/download-artifact@v8
-        with:
-          name: kuckuck_macos_arm64_ner
-          path: dist/macos_ner
-        continue-on-error: true
-      - name: Download Windows MCP Executable
-        uses: actions/download-artifact@v8
-        with:
-          name: kuckuck-mcp_windows
-          path: dist/windows_mcp
-        continue-on-error: true
-      - name: Download macOS MCP Executable
-        uses: actions/download-artifact@v8
-        with:
-          name: kuckuck-mcp_macos_arm64
-          path: dist/macos_mcp
-        continue-on-error: true
-      - name: Download Windows MCP+NER Executable
-        uses: actions/download-artifact@v8
-        with:
-          name: kuckuck-mcp_windows_ner
-          path: dist/windows_mcp_ner
-        continue-on-error: true
-      - name: Download macOS MCP+NER Executable
-        uses: actions/download-artifact@v8
-        with:
-          name: kuckuck-mcp_macos_arm64_ner
-          path: dist/macos_mcp_ner
-        continue-on-error: true
       - name: Rename Executables with version
         run: |
           set -eu
@@ -219,42 +153,6 @@ jobs:
           else
             echo "::warning::macOS arm64 artifact missing; skipping"
           fi
-          if [ -f ./dist/windows_ner/kuckuck_windows_ner.exe ]; then
-            mv ./dist/windows_ner/kuckuck_windows_ner.exe \
-              ./dist/release/kuckuck_windows_ner_${{ github.ref_name }}.exe
-          else
-            echo "::warning::Windows NER artifact missing; skipping"
-          fi
-          if [ -f ./dist/macos_ner/kuckuck_macos_arm64_ner ]; then
-            mv ./dist/macos_ner/kuckuck_macos_arm64_ner \
-              ./dist/release/kuckuck_macos_arm64_ner_${{ github.ref_name }}
-          else
-            echo "::warning::macOS arm64 NER artifact missing; skipping"
-          fi
-          if [ -f ./dist/windows_mcp/kuckuck-mcp_windows.exe ]; then
-            mv ./dist/windows_mcp/kuckuck-mcp_windows.exe \
-              ./dist/release/kuckuck-mcp_windows_${{ github.ref_name }}.exe
-          else
-            echo "::warning::Windows MCP artifact missing; skipping"
-          fi
-          if [ -f ./dist/macos_mcp/kuckuck-mcp_macos_arm64 ]; then
-            mv ./dist/macos_mcp/kuckuck-mcp_macos_arm64 \
-              ./dist/release/kuckuck-mcp_macos_arm64_${{ github.ref_name }}
-          else
-            echo "::warning::macOS arm64 MCP artifact missing; skipping"
-          fi
-          if [ -f ./dist/windows_mcp_ner/kuckuck-mcp_windows_ner.exe ]; then
-            mv ./dist/windows_mcp_ner/kuckuck-mcp_windows_ner.exe \
-              ./dist/release/kuckuck-mcp_windows_ner_${{ github.ref_name }}.exe
-          else
-            echo "::warning::Windows MCP+NER artifact missing; skipping"
-          fi
-          if [ -f ./dist/macos_mcp_ner/kuckuck-mcp_macos_arm64_ner ]; then
-            mv ./dist/macos_mcp_ner/kuckuck-mcp_macos_arm64_ner \
-              ./dist/release/kuckuck-mcp_macos_arm64_ner_${{ github.ref_name }}
-          else
-            echo "::warning::macOS arm64 MCP+NER artifact missing; skipping"
-          fi
           ls -la dist/release/
       - name: Upload Executable to Release
         uses: softprops/action-gh-release@v3
@@ -262,10 +160,4 @@ jobs:
           files: |
             ./dist/release/kuckuck_windows_${{ github.ref_name }}.exe
             ./dist/release/kuckuck_macos_arm64_${{ github.ref_name }}
-            ./dist/release/kuckuck_windows_ner_${{ github.ref_name }}.exe
-            ./dist/release/kuckuck_macos_arm64_ner_${{ github.ref_name }}
-            ./dist/release/kuckuck-mcp_windows_${{ github.ref_name }}.exe
-            ./dist/release/kuckuck-mcp_macos_arm64_${{ github.ref_name }}
-            ./dist/release/kuckuck-mcp_windows_ner_${{ github.ref_name }}.exe
-            ./dist/release/kuckuck-mcp_macos_arm64_ner_${{ github.ref_name }}
           fail_on_unmatched_files: false

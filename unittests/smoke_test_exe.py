@@ -2,7 +2,7 @@
 
 Invoked by the :file:`.github/workflows/build_executable.yml` pipeline after
 the PyInstaller stage. Takes the binary path as the sole argument and runs
-four checks:
+five checks:
 
 1. ``--version`` exits 0 and prints a non-empty string.
 2. ``init-key``, ``run`` and ``restore`` round-trip a document end-to-end.
@@ -11,6 +11,10 @@ four checks:
    ``settings.json`` entry. This guards against PyInstaller regressions
    that would strip ``kuckuck/_hooks/*`` from the bundle (``--collect-data
    kuckuck`` needs the package to be installed, not just on PYTHONPATH).
+5. ``kuckuck mcp --help`` works and mentions ``serve``. This guards
+   against the MCP subpackage being dropped from the single-binary
+   release - the fat ``kuckuck_<os>`` build lives or dies by its
+   MCP-server mode working.
 
 Exits non-zero on any failure so CI surfaces the binary as broken. The
 script is intentionally dependency-free - it must run against the cold
@@ -99,7 +103,58 @@ def main(binary: str) -> int:  # pylint: disable=too-many-return-statements
         if (rc := _check_install_claude_hook(binary, Path(workspace) / "hook-check")) != 0:
             return rc
 
+        if (rc := _check_mcp_subcommand(binary)) != 0:
+            return rc
+
     print("smoke test passed")
+    return 0
+
+
+def _check_mcp_subcommand(binary: str) -> int:
+    """Assert that 'kuckuck mcp' is registered AND the server can actually boot.
+
+    - ``kuckuck mcp --help`` lists ``serve`` (Typer registration intact).
+    - ``kuckuck mcp serve`` started with empty stdin runs the deferred-import
+      codepath, reaches the FastMCP stdio loop, fails fast on the unparseable
+      JSON-RPC payload, and exits. The stderr must not contain
+      ``ModuleNotFoundError`` / ``ImportError`` - those would indicate a
+      PyInstaller bundling bug (e.g. missing --collect-all fastmcp).
+
+    The ``--help`` path alone is NOT enough: Typer/Click resolve ``--help``
+    before the command body executes, so the deferred import of
+    ``kuckuck_mcp.server`` is never triggered and a broken bundle would pass
+    silently. The boot-with-EOF check forces the real codepath.
+    """
+    help_result = _run(binary, ["mcp", "--help"])
+    if help_result.returncode != 0:
+        print("kuckuck mcp --help failed", file=sys.stderr)
+        return 1
+    if "serve" not in help_result.stdout:
+        print("kuckuck mcp --help did not list 'serve' subcommand", file=sys.stderr)
+        return 1
+
+    # Timeout sized for the worst-case startup path: a ~300 MB PyInstaller
+    # onefile binary on Windows NTFS unpacks its _MEI directory on every
+    # invocation (typically 30-60 s cold), and only then does our deferred
+    # import of fastmcp / pydantic / torch run. 120 s leaves plenty of
+    # slack without giving up the "catch an actual hang" property.
+    try:
+        boot = subprocess.run(
+            [binary, "mcp", "serve"],
+            input="",
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        print("kuckuck mcp serve did not exit within 120s on empty stdin", file=sys.stderr)
+        return 1
+    combined_stderr = boot.stderr or ""
+    for marker in ("ModuleNotFoundError", "ImportError: "):
+        if marker in combined_stderr:
+            print(f"kuckuck mcp serve stderr contains '{marker}':\n{combined_stderr}", file=sys.stderr)
+            return 1
     return 0
 
 

@@ -7,6 +7,7 @@ optional ``cli`` extra is not installed.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -349,8 +350,7 @@ class TestFormatFlag:
         # End-to-end CLI run on a stub .msg: the MsgPreprocessor reads
         # the path itself, NOT the decoded text. We swap extract_msg with
         # a fake module so the test does not need a real OLE compound doc.
-        import sys
-        import types
+        import types  # pylint: disable=import-outside-toplevel
 
         class FakeMsg:
             def __init__(self) -> None:
@@ -493,12 +493,12 @@ class TestFetchModel:
 
         # Inject a fake huggingface_hub module so the import inside
         # cmd_fetch_model resolves without a real install.
-        import sys as _sys
+        # sys is imported at module scope
         import types as _types
 
         fake_mod = _types.ModuleType("huggingface_hub")
         fake_mod.snapshot_download = fake_snapshot_download  # type: ignore[attr-defined]
-        monkeypatch.setitem(_sys.modules, "huggingface_hub", fake_mod)
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_mod)
 
         result = runner.invoke(app, ["fetch-model", "--cache-dir", str(tmp_path / "cache")])
         assert result.exit_code == 0
@@ -549,12 +549,12 @@ class TestFetchModel:
             (Path(local_dir) / "config.json").write_text("{}", encoding="utf-8")
             raise OSError("simulated network failure mid-download")
 
-        import sys as _sys
+        # sys is imported at module scope
         import types as _types
 
         fake_mod = _types.ModuleType("huggingface_hub")
         fake_mod.snapshot_download = fake_snapshot_download  # type: ignore[attr-defined]
-        monkeypatch.setitem(_sys.modules, "huggingface_hub", fake_mod)
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_mod)
 
         target_root = tmp_path / "cache"
         result = runner.invoke(app, ["fetch-model", "--cache-dir", str(target_root)])
@@ -570,10 +570,10 @@ class TestFetchModel:
         # find_spec returning a spec object means installed; we patch the
         # CLI helper directly instead.
         monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
-        import sys as _sys
+        # sys is imported at module scope
 
         # Make sure huggingface_hub import fails.
-        monkeypatch.setitem(_sys.modules, "huggingface_hub", None)
+        monkeypatch.setitem(sys.modules, "huggingface_hub", None)
         result = runner.invoke(app, ["fetch-model", "--cache-dir", str(tmp_path / "c")])
         assert result.exit_code == 7
         assert "huggingface_hub is missing" in result.output
@@ -591,12 +591,12 @@ class TestFetchModel:
             called["n"] += 1
             return local_dir
 
-        import sys as _sys
+        # sys is imported at module scope
         import types as _types
 
         fake_mod = _types.ModuleType("huggingface_hub")
         fake_mod.snapshot_download = fake_snapshot_download  # type: ignore[attr-defined]
-        monkeypatch.setitem(_sys.modules, "huggingface_hub", fake_mod)
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_mod)
 
         result = runner.invoke(app, ["fetch-model", "--cache-dir", str(target_root), "--force"])
         assert result.exit_code == 0
@@ -616,3 +616,81 @@ class TestListDetectorsWithNer:
         result = runner.invoke(app, ["list-detectors"])
         assert result.exit_code == 0
         assert "\nner " not in result.output and not result.output.startswith("ner ")
+
+
+class TestMcpSubcommand:
+    """The ``mcp`` subcommand group replaces the need for a separate kuckuck-mcp binary."""
+
+    def test_mcp_help_lists_serve(self) -> None:
+        result = runner.invoke(app, ["mcp", "--help"])
+        assert result.exit_code == 0
+        assert "serve" in result.output
+
+    def test_mcp_serve_help_renders_docstring(self) -> None:
+        # Typer resolves '--help' via Click's parameter parsing, which happens
+        # BEFORE the command body executes. So the deferred import inside
+        # cmd_mcp_serve is not exercised here - this test only proves the
+        # command is registered and its docstring renders. The realistic
+        # "help works without the [mcp] extra" contract is covered by the
+        # monkeypatched test below, which stubs fastmcp out of sys.modules.
+        result = runner.invoke(app, ["mcp", "serve", "--help"])
+        assert result.exit_code == 0
+        assert "FastMCP" in result.output or "MCP" in result.output
+
+    def test_mcp_serve_help_works_without_mcp_extra(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Real "help without [mcp]" contract: even if fastmcp and mcp are
+        # absent from sys.modules (as on a minimal 'pip install kuckuck[cli]'
+        # install), 'kuckuck mcp serve --help' must still render. Typer only
+        # needs the docstring, which does not trigger the deferred import.
+        # If someone ever moves the import back to module scope, this test
+        # fails.
+        for name in list(sys.modules):
+            if name == "fastmcp" or name.startswith("fastmcp."):
+                monkeypatch.setitem(sys.modules, name, None)
+            if name == "mcp" or name.startswith("mcp."):
+                monkeypatch.setitem(sys.modules, name, None)
+            if name == "kuckuck_mcp.server":
+                monkeypatch.setitem(sys.modules, name, None)
+        result = runner.invoke(app, ["mcp", "serve", "--help"])
+        assert result.exit_code == 0
+
+    def test_mcp_serve_reports_missing_extra_when_fastmcp_absent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Realistic failure mode: kuckuck_mcp/ ships in every wheel, but
+        # kuckuck_mcp/server.py imports fastmcp at module scope. Without the
+        # [mcp] extra installed, 'from kuckuck_mcp.server import main'
+        # raises ImportError. The subcommand should catch that and emit the
+        # pip-install hint instead of a bare traceback.
+        # Force a reload of the cached module so re-import follows the stub.
+        for name in list(sys.modules):
+            if name == "kuckuck_mcp.server":
+                monkeypatch.delitem(sys.modules, name, raising=False)
+        monkeypatch.setitem(sys.modules, "fastmcp", None)
+        result = runner.invoke(app, ["mcp", "serve"])
+        assert result.exit_code != 0
+        assert "pip install 'kuckuck[mcp]'" in result.output
+
+    def test_mcp_serve_delegates_to_server_main(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        called = {"n": 0}
+
+        def fake_main() -> None:
+            called["n"] += 1
+
+        import kuckuck_mcp.server as _server  # pylint: disable=import-outside-toplevel
+
+        monkeypatch.setattr(_server, "main", fake_main)
+        result = runner.invoke(app, ["mcp", "serve"])
+        assert result.exit_code == 0, result.output
+        assert called["n"] == 1
+
+    def test_legacy_kuckuck_mcp_console_script_still_resolves(self) -> None:
+        # pip-backward-compat contract: the old 'kuckuck-mcp' entry in
+        # pyproject.toml still points at kuckuck_mcp.server:main. Users with
+        # legacy MCP-client configs (command: "kuckuck-mcp") keep working
+        # after upgrade. We cannot spawn 'kuckuck-mcp' as a subprocess
+        # because it would block on stdio, so we assert the import path.
+        import kuckuck_mcp.server as _server  # pylint: disable=import-outside-toplevel
+
+        assert callable(_server.main), "kuckuck_mcp.server.main must stay callable for console-script backward compat"

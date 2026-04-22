@@ -54,9 +54,29 @@ app = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 
+#: Sub-app for MCP-server-related commands. Registered as ``kuckuck mcp …``.
+#: The server import is intentionally deferred into the command body so
+#: this module keeps loading cleanly when the optional ``[mcp]`` extra
+#: (fastmcp, mcp) is not installed.
+mcp_app = typer.Typer(
+    help="Manage the kuckuck MCP server (FastMCP stdio).",
+    no_args_is_help=True,
+)
+app.add_typer(mcp_app, name="mcp")
+
 #: Names of explicit subcommands — kept in sync with the ``@app.command`` registrations.
 _SUBCOMMANDS = frozenset(
-    {"init-key", "restore", "inspect", "list-detectors", "version", "run", "fetch-model", "install-claude-hook"}
+    {
+        "init-key",
+        "restore",
+        "inspect",
+        "list-detectors",
+        "version",
+        "run",
+        "fetch-model",
+        "install-claude-hook",
+        "mcp",
+    }
 )
 
 #: Return codes used across the CLI. Stable so shell scripts can dispatch on them.
@@ -490,6 +510,32 @@ def _report_uninstall(result: install_hook.InstallResult) -> None:
         typer.echo(f"Stripped hook entry from {result.settings_path}")
     else:
         typer.echo(f"No hook entry found in {result.settings_path}")
+
+
+@mcp_app.command("serve")
+def cmd_mcp_serve() -> None:
+    """Boot the kuckuck FastMCP stdio server.
+
+    Equivalent to invoking the stand-alone ``kuckuck-mcp`` console script.
+    The single-binary Windows/macOS release (see the ``kuckuck_*`` download
+    on the releases page) uses this subcommand - MCP clients configure
+    ``command: "kuckuck", args: ["mcp", "serve"]``.
+    """
+    try:
+        # Deferred import: this module must load cleanly without the [mcp]
+        # optional extra installed. fastmcp / mcp are only required when
+        # the user actually tries to start the server.
+        from kuckuck_mcp.server import main as mcp_main  # pylint: disable=import-outside-toplevel
+    except ImportError as exc:
+        typer.echo(
+            "MCP server support is not available in this install.\n"
+            "Install the optional extra via: pip install 'kuckuck[mcp]'\n"
+            "Or use the bundled release binary from "
+            "https://github.com/Hochfrequenz/kuckuck/releases/latest",
+            err=True,
+        )
+        raise typer.Exit(EXIT_USAGE) from exc
+    mcp_main()
 
 
 @app.command("version")

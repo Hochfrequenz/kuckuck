@@ -125,18 +125,16 @@ pip install "kuckuck[cli,ner]"
 ### Als Standalone-Binary
 
 Lade dir die plattformspezifische Binary von der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases/latest).
-Es gibt vier Varianten je Plattform — zwei reine CLI-Varianten und zwei MCP-Server-Varianten:
+**Ein Binary pro Plattform** - es enthält CLI, MCP-Server und PERSON-Namen-Erkennung (NER) in einem:
 
-| Variante | Dateiname | Größe | CLI | MCP-Server | NER |
-|---|---|---|---|---|---|
-| CLI Slim | `kuckuck_windows_<ver>.exe`, `kuckuck_macos_arm64_<ver>` | ~ 30 MB | ja | nein | nein |
-| CLI NER | `kuckuck_windows_ner_<ver>.exe`, `kuckuck_macos_arm64_ner_<ver>` | ~ 300 MB | ja | nein | ja |
-| MCP Slim | `kuckuck-mcp_windows_<ver>.exe`, `kuckuck-mcp_macos_arm64_<ver>` | ~ 43 MB | nein | ja | nein |
-| MCP NER (empfohlen für Coding-Assistenten) | `kuckuck-mcp_windows_ner_<ver>.exe`, `kuckuck-mcp_macos_arm64_ner_<ver>` | ~ 305 MB | nein | ja | ja |
+| Plattform | Dateiname | Größe |
+|---|---|---|
+| Windows | `kuckuck_windows_<ver>.exe` | ~ 300 MB |
+| macOS Apple Silicon | `kuckuck_macos_arm64_<ver>` | ~ 300 MB |
 
-Die CLI-Varianten startest du mit `kuckuck <file>`; sie enthalten keinen MCP-Server.
-Die MCP-Varianten sind stdio-Server für MCP-Clients (Claude Code, opencode, Claude Desktop) — siehe [`integrations/mcp/README.md`](integrations/mcp/README.md) für die Setup-Anleitung pro Client.
-Die `_ner`-Varianten bringen zusätzlich gliner + CPU-only torch mit, sodass die PERSON-Namen-Erkennung ohne separaten Python-Install funktioniert (Modell wird einmalig via `kuckuck fetch-model` bzw. das `kuckuck_fetch_model` MCP-Tool nachgeladen).
+Das Binary startest du als CLI mit `kuckuck <file>` und als MCP-Server mit `kuckuck mcp serve` - MCP-Clients (Claude Code, opencode, Claude Desktop) bekommen in der Config `command: "kuckuck", args: ["mcp", "serve"]`.
+Siehe [`integrations/mcp/README.md`](integrations/mcp/README.md) für die Setup-Anleitung pro Client.
+Das NER-Modell selbst (~ 1.1 GB) wird einmalig via `kuckuck fetch-model` oder das `kuckuck_fetch_model` MCP-Tool nachgeladen.
 
 Nach dem Download umbenennen (optional) und Quarantäne-Attribut entfernen:
 

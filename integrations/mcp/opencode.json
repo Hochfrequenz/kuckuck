@@ -1,10 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "_comment": "Add this block to opencode.json (project-local) or ~/.config/opencode/opencode.json (global). Restart opencode after editing. Replace the placeholder paths with your actual values.",
+  "_comment": "Add this block to opencode.json (project-local) or ~/.config/opencode/opencode.json (global). Restart opencode after editing. Replace the placeholder paths with your actual values. On a pip install, 'kuckuck' expands to the console script; with the release binary, it expands to the downloaded kuckuck_<os> executable renamed to 'kuckuck' on PATH. Legacy pip installs using the 'kuckuck-mcp' console-script alias still work; binary users only get the 'kuckuck' command (no separate kuckuck-mcp binary exists in the current release).",
   "mcp": {
     "kuckuck": {
       "type": "local",
-      "command": ["kuckuck-mcp"],
+      "command": ["kuckuck", "mcp", "serve"],
       "enabled": true,
       "environment": {
         "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"

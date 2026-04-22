@@ -1,9 +1,9 @@
 {
-  "_comment": "Add this block to ~/.claude/settings.json (global) or .claude/settings.json (project-local). Claude Code picks it up automatically on next startup. Replace /absolute/path/to/.kuckuck-key with your actual key file.",
+  "_comment": "Add this block to ~/.claude/settings.json (global) or .claude/settings.json (project-local). Claude Code picks it up automatically on next startup. Replace /absolute/path/to/.kuckuck-key with your actual key file. On a pip install, 'kuckuck' expands to the console script; with the release binary, it expands to the downloaded kuckuck_<os> executable renamed to 'kuckuck' on PATH. Legacy pip installs using the 'kuckuck-mcp' console-script alias still work; binary users only get the 'kuckuck' command (no separate kuckuck-mcp binary exists in the current release).",
   "mcpServers": {
     "kuckuck": {
-      "command": "kuckuck-mcp",
-      "args": [],
+      "command": "kuckuck",
+      "args": ["mcp", "serve"],
       "env": {
         "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"
       }
