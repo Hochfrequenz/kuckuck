@@ -12,11 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP server** `kuckuck-mcp` (Issue [#10](https://github.com/Hochfrequenz/kuckuck/issues/10)).
   Sub-package `src/kuckuck_mcp/`, optional extra `kuckuck[mcp]`, console-script `kuckuck-mcp`.
   Built on FastMCP `>= 3` (consistent with the Hochfrequenz MCP stack).
-  Four stdio tools: `kuckuck_pseudonymize`, `kuckuck_restore` (gated behind FastMCP elicitation), `kuckuck_list_detectors`, `kuckuck_status` (with aggregated `problems`-list and remediation hints, pattern from `Hochfrequenz/sap-mcp-config`).
-  Three discoverability prompts (`pseudonymize_before_reading`, `diagnose_kuckuck_setup`, `explain_kuckuck_tokens`) so MCP clients surface the safe workflows as quick-actions.
-  `kuckuck_pseudonymize` defaults to `ner=auto` — best-effort PERSON detection when the `[ner]` extra is installed and the model is on disk, regex-only fallback otherwise (no crash on minimal setups).
-  All tools are `file_path`-based — a text-input variant would have leaked PII through the tool argument.
+  **Five stdio tools**:
+  - `kuckuck_pseudonymize` — file-path-based, defaults to `ner=auto` (best-effort PERSON detection when the `[ner]` extra and the model are available, regex-only fallback otherwise; no crash on minimal setups).
+  - `kuckuck_restore` — gated behind FastMCP elicitation; user must confirm cleartext disclosure.
+  - `kuckuck_fetch_model` — one-time downloader for the ~ 1.1 GB GLiNER snapshot, gated behind elicitation so a multi-GB transfer never starts silently.
+  - `kuckuck_list_detectors` — metadata only.
+  - `kuckuck_status` — aggregated `problems`-list with remediation hints (pattern from `Hochfrequenz/sap-mcp-config`).
+  **Four discoverability prompts** (slash-menu quick-actions): `setup_kuckuck` (first-time-setup walkthrough), `pseudonymize_before_reading`, `diagnose_kuckuck_setup`, `explain_kuckuck_tokens`.
+  All pseudonymization tools are `file_path`-based — a text-input variant would have leaked PII through the tool argument.
   No MCP resources exposed (mapping inspection stays local via `kuckuck inspect`).
+  Tool-arguments are workspace-confined via `KUCKUCK_MCP_ALLOWED_ROOTS` (default `$PWD`), so the model cannot trigger writes outside the configured roots.
+- **Four MCP-enabled PyInstaller binaries** alongside the existing CLI binaries:
+  `kuckuck-mcp_windows[.exe]` (~ 43 MB, slim+MCP) and `kuckuck-mcp_*_ner[.exe]` (~ 305 MB, NER+MCP) for Windows and macOS arm64.
+  The "MCP NER" binary is the recommended download for non-technical users who want the coding-assistant integration with PERSON detection out of the box.
+  CLI-only binaries (`kuckuck_*`) explicitly do NOT contain the MCP server; the binary matrix in the README documents which variant has what.
 - Setup guides plus example configs for Claude Desktop, Claude Code, Cursor and opencode in `integrations/mcp/`.
 - AGENTS.md updated with the rule: read FastMCP docs before changing `src/kuckuck_mcp/`, return-types are pydantic `BaseModel` not `TypedDict`.
 
