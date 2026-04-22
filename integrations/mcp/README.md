@@ -4,17 +4,33 @@ Der `kuckuck-mcp` Server exponiert Kuckuck als Set MCP-Tools, sodass MCP-fähige
 
 ## Installation
 
+Zwei Wege:
+
+**(a) Via pip (empfohlen wenn du Python im Setup hast)**:
+
 ```bash
-pip install "kuckuck[mcp]"
+pip install "kuckuck[mcp,ner]"
 ```
 
-Das installiert `kuckuck-mcp` als Console-Script und FastMCP `>=3` als Dependency.
-Verifiziere die Installation:
+`[mcp]` zieht FastMCP `>=3` und die MCP-Lib, `[ner]` zusätzlich GLiNER+torch für die PERSON-Name-Erkennung.
+Nach dem Install ist `kuckuck-mcp` als Console-Script verfügbar:
 
 ```bash
 which kuckuck-mcp
 # /home/you/.local/bin/kuckuck-mcp  oder ähnlich
 ```
+
+**(b) Als Standalone-Binary** (empfohlen für non-technical User):
+
+Auf der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases) gibt es vier MCP-Binary-Varianten pro Plattform:
+
+| Datei | Größe | Was drin |
+|---|---|---|
+| `kuckuck-mcp_windows_<ver>.exe` / `kuckuck-mcp_macos_arm64_<ver>` | ~ 43 MB | Slim + MCP. Regex-Detektoren, kein PERSON-Namen. |
+| `kuckuck-mcp_windows_ner_<ver>.exe` / `kuckuck-mcp_macos_arm64_ner_<ver>` | ~ 305 MB | NER + MCP. Empfohlen für beste Ergebnisse out-of-the-box. |
+
+Die "normalen" `kuckuck_*.exe` Binaries (ohne `-mcp`) enthalten den MCP-Server **nicht** — sie sind nur die CLI.
+Für den MCP-Server brauchst du entweder einen `-mcp`-Binary oder den pip-Install.
 
 ## Welche Dateien darf der Server überhaupt anfassen?
 
@@ -47,12 +63,19 @@ Kein Key gefunden? Der `kuckuck_status` MCP-Tool gibt dir eine klare Diagnose:
 ```json
 {
   "key_found": false,
-  "key_error": "No Kuckuck key file found. Searched: ...",
+  "key_error": "no key file in the configured lookup chain",
   "gliner_installed": true,
   "model_available": false,
-  "model_path": "/home/you/.cache/kuckuck/models/gliner_multi-v2.1"
+  "model_path": "/home/you/.cache/kuckuck/models/gliner_multi-v2.1",
+  "problems": [
+    "No master key found. Set KUCKUCK_KEY_FILE in your MCP client config to an absolute path, or run 'kuckuck init-key' once to create ~/.config/kuckuck/key. Lookup error: no key file in the configured lookup chain",
+    "NER model snapshot missing at /home/you/.cache/kuckuck/models/gliner_multi-v2.1. Either run `kuckuck fetch-model` in a shell, or call the kuckuck_fetch_model MCP tool from this server (it will ask for confirmation before the ~ 1.1 GB download)."
+  ]
 }
 ```
+
+`key_error` ist absichtlich generisch — wir leaken keine absoluten Pfade ins Modell-Kontextfenster.
+Die konkreten Remediation-Hinweise stehen in `problems`.
 
 Erstmal Key anlegen:
 
@@ -68,10 +91,13 @@ kuckuck init-key --key-file PATH    # eigener Pfad
 |---|---|---|
 | `kuckuck_pseudonymize(file_path, format=auto, ner=auto, dry_run=false)` | Pseudonymisiert die Datei in-place, schreibt Mapping-Sidecar daneben. `ner=auto` (default) nutzt NER wenn verfügbar, fällt auf Regex-only zurück wenn `gliner` oder Modell fehlen. `ner=true` erzwingt NER (Tool-Error wenn Setup fehlt), `ner=false` deaktiviert NER explizit. | Nein - nur Status-Line ("ok: foo.eml -> 4 replacements") |
 | `kuckuck_restore(file_path)` | Restored Klartext aus dem Sidecar-Mapping | Ja - **gated über FastMCP-Elicitation**: User muss aktiv "yes" bestätigen |
+| `kuckuck_fetch_model()` | Lädt das ~ 1.1 GB GLiNER-Snapshot in den Cache. Einmal nötig, damit `ner=auto` PERSON-Namen erkennt. | Nein - aber **gated über Elicitation**: User muss den Download mit "yes" bestätigen, der Server startet keinen Multi-GB-Transfer still. |
 | `kuckuck_list_detectors()` | Listet aktive Detektoren (email, phone, handle, term, ner) | Nein |
-| `kuckuck_status()` | Self-Diagnose (key found, gliner installiert, model on disk) | Nein |
+| `kuckuck_status()` | Self-Diagnose (key found, gliner installiert, model on disk) plus aggregierte `problems`-Liste mit Remediation-Hinweisen | Nein |
 
-Alle Tools nehmen einen `file_path`, kein direktes Text-Argument — siehe [Decision 7 in Issue #10](https://github.com/Hochfrequenz/kuckuck/issues/10#issuecomment-4294693864): Text-Tool hätte das LLM den Klartext im Tool-Argument schon sehen lassen, was den Schutz aushebelt.
+Alle Pseudonymisierungs-Tools nehmen einen `file_path`, kein direktes Text-Argument.
+Hätte Kuckuck ein `kuckuck_pseudonymize_text(text="Hallo Anna Müller, ...")` exponiert, würde der Klartext im Tool-Call-Argument stehen — also im Modell-Kontext, im Conversation-Log, in den Provider-Telemetrie-Logs.
+Mit `file_path` liest der Server die Datei direkt vom Filesystem; das LLM sieht den Inhalt nie.
 
 ## Verfügbare Prompts
 
@@ -80,6 +106,7 @@ Sie generieren keine Side-Effects, sondern liefern dem Modell eine Anleitung in 
 
 | Prompt | Wann nutzen |
 |---|---|
+| `setup_kuckuck` | Wenn der User gerade den MCP-Server installiert hat und fragt "wie geht's los?" - walks through Key, [ner] extra und Modell-Download in der richtigen Reihenfolge. |
 | `pseudonymize_before_reading(file_path)` | Wenn der User dir eine Datei mit potentiellem PII gibt - liefert dem Modell die safe-by-default Sequenz (Pseudonymize first, dann Read). |
 | `diagnose_kuckuck_setup` | Wenn ein `kuckuck_*` Tool fehlschlägt oder der User fragt "stimmt mein Kuckuck-Setup?" - ruft `kuckuck_status` auf und formatiert die Probleme + Remediations. |
 | `explain_kuckuck_tokens` | Wenn das Modell auf `[[EMAIL_xxx]]` / `[[PERSON_xxx]]` Tokens trifft und der User fragt was die bedeuten. |
