@@ -23,12 +23,7 @@ from kuckuck.pseudonymize import (
     pseudonymize_text,
     restore_text,
 )
-
-# run_pseudonymize lives in kuckuck.__main__ alongside the typer plumbing
-# because the CLI and library API share the same per-file orchestration.
-# Re-exporting here keeps "from kuckuck import run_pseudonymize" working
-# without requiring callers to know the internal layout.
-from kuckuck.__main__ import run_pseudonymize  # noqa: E402  pylint: disable=wrong-import-position
+from kuckuck.runner import run_pseudonymize
 
 __all__ = [
     "DEFAULT_KEY_PATH",
