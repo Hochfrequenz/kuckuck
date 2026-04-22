@@ -57,8 +57,16 @@ def hook_script_name() -> str:
 
 
 def _bundled_script_bytes(script_name: str) -> bytes:
-    """Return the byte contents of a bundled hook script."""
-    return resources.files("kuckuck._hooks").joinpath(script_name).read_bytes()
+    """Return the byte contents of a bundled hook script.
+
+    Look up the resource via the parent ``kuckuck`` package rather than
+    ``kuckuck._hooks``. PyInstaller's ``collect_data_files`` copies the
+    ``.sh`` / ``.ps1`` payload into the bundle but omits the ``__init__.py``
+    for a data-only directory, so ``import kuckuck._hooks`` raises
+    ``ModuleNotFoundError`` inside a frozen binary. ``kuckuck`` itself
+    is always importable.
+    """
+    return (resources.files("kuckuck") / "_hooks" / script_name).read_bytes()
 
 
 def _copy_script(target: Path, script_name: str) -> bool:

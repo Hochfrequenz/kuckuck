@@ -2,19 +2,24 @@
 
 Invoked by the :file:`.github/workflows/build_executable.yml` pipeline after
 the PyInstaller stage. Takes the binary path as the sole argument and runs
-three checks:
+four checks:
 
 1. ``--version`` exits 0 and prints a non-empty string.
 2. ``init-key``, ``run`` and ``restore`` round-trip a document end-to-end.
 3. An unpseudonymized input round-trips back to the original after restore.
+4. ``install-claude-hook`` writes the bundled hook script and a valid
+   ``settings.json`` entry. This guards against PyInstaller regressions
+   that would strip ``kuckuck/_hooks/*`` from the bundle (``--collect-data
+   kuckuck`` needs the package to be installed, not just on PYTHONPATH).
 
 Exits non-zero on any failure so CI surfaces the binary as broken. The
-script is intentionally dependency-free — it must run against the cold
+script is intentionally dependency-free - it must run against the cold
 checkout on a GitHub Actions runner without the project's dev env.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -91,7 +96,47 @@ def main(binary: str) -> int:  # pylint: disable=too-many-return-statements
             print("restore did not reproduce original", file=sys.stderr)
             return 1
 
+        if (rc := _check_install_claude_hook(binary, Path(workspace) / "hook-check")) != 0:
+            return rc
+
     print("smoke test passed")
+    return 0
+
+
+def _check_install_claude_hook(binary: str, hook_workspace: Path) -> int:
+    """Assert that install-claude-hook writes a usable script and settings entry.
+
+    Guards against PyInstaller regressions that would strip the bundled
+    hook scripts from the binary (``--collect-data kuckuck`` needs the
+    package installed, not just on PYTHONPATH).
+    """
+    hook_workspace.mkdir()
+    install = _run(binary, ["install-claude-hook"], cwd=str(hook_workspace))
+    if install.returncode != 0:
+        print("install-claude-hook failed", file=sys.stderr)
+        return 1
+    script_name = "kuckuck-pseudo.ps1" if sys.platform == "win32" else "kuckuck-pseudo.sh"
+    hook_script = hook_workspace / ".claude" / "hooks" / script_name
+    settings_path = hook_workspace / ".claude" / "settings.json"
+    if not hook_script.is_file():
+        print(f"hook script missing: {hook_script}", file=sys.stderr)
+        return 1
+    if hook_script.stat().st_size < 500:
+        print(f"hook script suspiciously small: {hook_script.stat().st_size} bytes", file=sys.stderr)
+        return 1
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"settings.json unreadable: {exc}", file=sys.stderr)
+        return 1
+    commands = [
+        inner.get("command", "")
+        for group in settings.get("hooks", {}).get("PreToolUse", [])
+        for inner in group.get("hooks", [])
+    ]
+    if not any("kuckuck-pseudo" in cmd for cmd in commands):
+        print("settings.json does not reference the kuckuck hook", file=sys.stderr)
+        return 1
     return 0
 
 

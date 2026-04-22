@@ -20,7 +20,7 @@ import shutil
 import stat
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import pytest
@@ -214,18 +214,31 @@ class TestCommandStringRendering:
     """
 
     def test_posix_project_local_uses_claude_project_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Use PurePosixPath literals so the stringification does not
+        # depend on the host platform. On Windows, a plain Path("/a/b")
+        # stringifies with backslashes regardless of the monkeypatched
+        # sys.platform, which would break this cross-platform test.
         monkeypatch.setattr("kuckuck.install_hook.sys.platform", "linux")
-        rendered = install_hook.command_string(Path("/irrelevant"), global_scope=False)
+        rendered = install_hook.command_string(
+            PurePosixPath("/irrelevant"),  # type: ignore[arg-type]
+            global_scope=False,
+        )
         assert rendered == '"$CLAUDE_PROJECT_DIR"/.claude/hooks/kuckuck-pseudo.sh'
 
     def test_posix_global_uses_absolute_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("kuckuck.install_hook.sys.platform", "linux")
-        rendered = install_hook.command_string(Path("/home/u/.claude/hooks/kuckuck-pseudo.sh"), global_scope=True)
+        rendered = install_hook.command_string(
+            PurePosixPath("/home/u/.claude/hooks/kuckuck-pseudo.sh"),  # type: ignore[arg-type]
+            global_scope=True,
+        )
         assert rendered == '"/home/u/.claude/hooks/kuckuck-pseudo.sh"'
 
     def test_windows_project_local_uses_forward_slashes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("kuckuck.install_hook.sys.platform", "win32")
-        rendered = install_hook.command_string(Path("ignored"), global_scope=False)
+        rendered = install_hook.command_string(
+            PureWindowsPath("ignored"),  # type: ignore[arg-type]
+            global_scope=False,
+        )
         assert "\\" not in rendered, f"expected forward slashes only, got {rendered!r}"
         assert rendered == (
             "powershell -NoProfile -ExecutionPolicy Bypass -File "
@@ -236,16 +249,13 @@ class TestCommandStringRendering:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # Build a PureWindowsPath literal so str() / as_posix() produce
-        # Windows-style output even on a Linux host. Without .as_posix()
-        # this test would fail because the rendered command would contain
-        # backslashes that bash (the default Claude Code hook shell) eats.
-        from pathlib import PureWindowsPath  # pylint: disable=import-outside-toplevel
-
+        # PureWindowsPath.as_posix() converts backslashes to forward
+        # slashes regardless of the host platform. Reverting the
+        # .as_posix() call in install_hook would leak backslashes into
+        # the rendered command and break bash, which is what this locks in.
         monkeypatch.setattr("kuckuck.install_hook.sys.platform", "win32")
-        # PureWindowsPath supports as_posix() and behaves like Path for our call.
-        win_path: Any = PureWindowsPath("C:\\Users\\u\\.claude\\hooks\\kuckuck-pseudo.ps1")
-        rendered = install_hook.command_string(win_path, global_scope=True)
+        win_path = PureWindowsPath("C:\\Users\\u\\.claude\\hooks\\kuckuck-pseudo.ps1")
+        rendered = install_hook.command_string(win_path, global_scope=True)  # type: ignore[arg-type]
         assert "\\" not in rendered, f"expected forward slashes only, got {rendered!r}"
         assert rendered == (
             "powershell -NoProfile -ExecutionPolicy Bypass -File " '"C:/Users/u/.claude/hooks/kuckuck-pseudo.ps1"'
