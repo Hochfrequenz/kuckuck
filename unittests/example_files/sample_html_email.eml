@@ -1,0 +1,17 @@
+From: Alice Example <alice@example.com>
+To: Bob Example <bob@example.com>
+Subject: HTML Mail
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<html>
+<head><title>Update</title></head>
+<body>
+<p>Hallo Bob,</p>
+<p>bitte ruf mich an: <strong>+49 40 12345678</strong></p>
+<p>Gruesse,<br/>
+Hans Mueller<br/>
+hans@firma.de</p>
+</body>
+</html>

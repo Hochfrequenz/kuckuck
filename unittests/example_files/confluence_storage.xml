@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:ac="http://atlassian.com/ac" xmlns:ri="http://atlassian.com/ri">
+  <ac:layout>
+    <p>Kontakt: max@firma.de</p>
+    <p>Zugewiesen an <ac:link><ri:user ri:account-id="557058:f58131cb-1234"/></ac:link></p>
+    <ac:macro ac:name="info">
+      <ac:rich-text-body>
+        <p>Bitte cc an eva.schmidt@firma.de</p>
+      </ac:rich-text-body>
+    </ac:macro>
+    <p att="hans@firma.de">Eva Mueller hat geantwortet.</p>
+  </ac:layout>
+</root>

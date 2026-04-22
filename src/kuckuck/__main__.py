@@ -29,7 +29,25 @@ from pydantic import SecretStr
 
 from kuckuck.config import DEFAULT_KEY_PATH, PROJECT_KEY_NAME, KeyNotFoundError, init_key, load_key
 from kuckuck.mapping import Mapping, MappingCorruptError, load_mapping, save_mapping
-from kuckuck.pseudonymize import build_default_detectors, pseudonymize_text, restore_text
+from kuckuck.preprocessors import (
+    EmlPreprocessor,
+    MarkdownPreprocessor,
+    MsgPreprocessor,
+    Preprocessor,
+    TextPreprocessor,
+    XmlPreprocessor,
+)
+from kuckuck.pseudonymize import (
+    PseudonymizeResult,
+    build_default_detectors,
+    pseudonymize_msg_file,
+    pseudonymize_text,
+    restore_text,
+)
+
+# pseudonymize_msg_file lives in kuckuck.pseudonymize because it shares the
+# detector / mapping / counter plumbing with pseudonymize_text. The CLI
+# uses it for --format msg where the input is a binary OLE compound doc.
 
 app = typer.Typer(
     help="Lokale Pseudonymisierung personenbezogener Daten vor der Weitergabe an Cloud-LLMs.",
@@ -48,6 +66,42 @@ EXIT_KEY_NOT_FOUND = 3
 EXIT_MAPPING_MISSING = 4
 EXIT_MAPPING_CORRUPT = 5
 EXIT_MAPPING_WRONG_KEY = 6
+
+
+#: Map ``--format`` choices to their preprocessor implementations.
+_PREPROCESSORS: dict[str, type[Preprocessor]] = {
+    "text": TextPreprocessor,
+    "eml": EmlPreprocessor,
+    "msg": MsgPreprocessor,
+    "md": MarkdownPreprocessor,
+    "xml": XmlPreprocessor,
+}
+
+#: Auto-detection table. Suffix lookup is case-insensitive.
+_FORMAT_BY_SUFFIX: dict[str, str] = {
+    ".eml": "eml",
+    ".msg": "msg",
+    ".md": "md",
+    ".markdown": "md",
+    ".xml": "xml",
+    ".html": "xml",  # parses fine as XML for the structural walk
+}
+
+
+def _select_preprocessor(format_name: str, path: Path) -> Preprocessor:
+    """Resolve ``--format`` to a concrete preprocessor instance.
+
+    ``--format auto`` (the default) uses the file suffix to decide;
+    everything else picks the named entry from :data:`_PREPROCESSORS`.
+    Unknown suffixes fall back to the plain-text preprocessor so the
+    default behaviour stays compatible with PR 1 / PR 2.
+    """
+    if format_name == "auto":
+        format_name = _FORMAT_BY_SUFFIX.get(path.suffix.lower(), "text")
+    cls = _PREPROCESSORS.get(format_name)
+    if cls is None:
+        raise typer.BadParameter(f"Unknown --format '{format_name}'")
+    return cls()
 
 
 def _load_mapping_or_exit(master: SecretStr, path: Path) -> Mapping:
@@ -125,6 +179,17 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     phone_region: str = typer.Option(
         "DE", "--phone-region", help="Default ISO country code for parsing phone numbers."
     ),
+    format_: str = typer.Option(
+        "auto",
+        "--format",
+        help=(
+            "Input format. 'auto' (default) chooses by file suffix: "
+            ".eml -> eml, .msg -> msg, .md / .markdown -> md, "
+            ".xml / .html -> xml, everything else -> text. "
+            "Note: msg always emits plain text (the .msg compound document "
+            "is not round-tripped); attachments are dropped with a warning."
+        ),
+    ),
 ) -> None:
     """Pseudonymize one or more text files.
 
@@ -144,18 +209,88 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         output_dir.mkdir(parents=True, exist_ok=True)
 
     for path in paths:
+        preprocessor = _select_preprocessor(format_, path)
         target_text = output_dir / path.name if output_dir is not None else path
         target_map = _sidecar_path(target_text)
         mapping = _load_mapping_or_exit(master, target_map) if target_map.is_file() else Mapping()
-        text = path.read_text(encoding="utf-8")
-        result = pseudonymize_text(text, master, detectors, mapping=mapping, sequential_tokens=sequential_tokens)
+        result = _pseudonymize_one(
+            path=path,
+            preprocessor=preprocessor,
+            master=master,
+            detectors=detectors,
+            mapping=mapping,
+            sequential_tokens=sequential_tokens,
+        )
         if dry_run:
-            typer.echo(f"--- {path} -> {len(result.replaced)} replacements ---")
+            typer.echo(f"--- {path} -> {len(result.replaced)} replacements ({preprocessor.name}) ---")
             typer.echo(result.text)
             continue
         target_text.write_text(result.text, encoding="utf-8")
         save_mapping(master, result.mapping, target_map)
-        typer.echo(f"{path} -> {target_text} ({len(result.replaced)} replacements, map: {target_map})")
+        typer.echo(
+            f"{path} -> {target_text} ({len(result.replaced)} replacements, "
+            f"format: {preprocessor.name}, map: {target_map})"
+        )
+
+
+def _pseudonymize_one(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    *,
+    path: Path,
+    preprocessor: Preprocessor,
+    master: SecretStr,
+    detectors: list,  # type: ignore[type-arg]
+    mapping: Mapping,
+    sequential_tokens: bool,
+) -> PseudonymizeResult:
+    """Read *path*, run the right pipeline, return the pseudonymize result.
+
+    Branches on the preprocessor type so MsgPreprocessor (which needs
+    binary input) takes the dedicated :func:`pseudonymize_msg_file` path
+    while text-based preprocessors keep the existing UTF-8 read.
+    Friendly errors translate library exceptions into typer.Exit(2).
+    """
+    if isinstance(preprocessor, MsgPreprocessor):
+        if not path.is_file():
+            typer.echo(f"{path}: not a regular file (refusing to read)", err=True)
+            raise typer.Exit(EXIT_USAGE)
+        try:
+            return pseudonymize_msg_file(
+                path,
+                master,
+                detectors,
+                mapping=mapping,
+                sequential_tokens=sequential_tokens,
+            )
+        except (OSError, ValueError) as exc:
+            typer.echo(f"{path}: cannot parse as Outlook .msg: {exc}", err=True)
+            raise typer.Exit(EXIT_USAGE) from exc
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        typer.echo(
+            f"{path}: cannot decode as UTF-8 ({exc}). " "If this is an Outlook .msg file, pass --format msg.",
+            err=True,
+        )
+        raise typer.Exit(EXIT_USAGE) from exc
+
+    try:
+        return pseudonymize_text(
+            text,
+            master,
+            detectors,
+            mapping=mapping,
+            sequential_tokens=sequential_tokens,
+            preprocessor=preprocessor,
+        )
+    except SyntaxError as exc:
+        # lxml.etree.XMLSyntaxError inherits from SyntaxError; using the
+        # base type lets us avoid pulling lxml symbols at the CLI level.
+        typer.echo(
+            f"{path}: invalid {preprocessor.name} document: {exc}. " "Try --format text to bypass structural parsing.",
+            err=True,
+        )
+        raise typer.Exit(EXIT_USAGE) from exc
 
 
 @app.command("restore")

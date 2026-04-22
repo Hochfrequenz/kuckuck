@@ -1,0 +1,75 @@
+# serializer version: 1
+# name: TestPipelineSnapshots.test_eml_snapshot
+  '''
+  From: Alice Example <alice@example.com>
+  To: Bob Example <bob@example.com>
+  Subject: Projektupdate
+  Date: Wed, 15 Apr 2026 10:30:00 +0200
+  Content-Type: text/plain; charset="utf-8"
+  Content-Transfer-Encoding: 7bit
+  MIME-Version: 1.0
+  
+  Hallo Bob,
+  
+  kannst du mir bitte das aktuelle Status-Update zum Projekt zusenden?
+  Mein Ansprechpartner ist Klaus Mueller ([[EMAIL_82cb864a]]),
+  erreichbar unter [[PHONE_82a497e1]].
+  
+  > Ja, das passt fuer mich.
+  > Ich melde mich morgen.
+  
+  Mit freundlichen Gruessen,
+  
+  Eva Schmidt
+  Projektleiterin
+  [[EMAIL_b98ba497]]
+  [[PHONE_b7193c82]]
+  
+  '''
+# ---
+# name: TestPipelineSnapshots.test_markdown_snapshot
+  '''
+  ---
+  title: Projekt-Notiz
+  author: Alice
+  ---
+  
+  # Projekt-Notiz
+  
+  Hallo, das ist eine Notiz von [[EMAIL_061fa5e7]].
+  
+  Code-Beispiel (nicht pseudonymisieren):
+  
+  ```python
+  def send_email():
+      return "max@firma.de"
+  ```
+  
+  Inline-Code wie `max@firma.de` darf nicht angefasst werden.
+  
+  Aber nach dem Code: kontaktiere bitte [[EMAIL_b98ba497]].
+  
+  > Zitat: ping [[HANDLE_38d23f47]] fuer Details.
+  
+  [Referenz][1]
+  
+  [1]: https://example.com/foo (von [[EMAIL_035e72fe]])
+  
+  '''
+# ---
+# name: TestPipelineSnapshots.test_xml_snapshot
+  '''
+  <root xmlns:ac="http://atlassian.com/ac" xmlns:ri="http://atlassian.com/ri">
+    <ac:layout>
+      <p>Kontakt: [[EMAIL_061fa5e7]]</p>
+      <p>Zugewiesen an <ac:link><ri:user ri:account-id="557058:f58131cb-1234"/></ac:link></p>
+      <ac:macro ac:name="info">
+        <ac:rich-text-body>
+          <p>Bitte cc an [[EMAIL_b98ba497]]</p>
+        </ac:rich-text-body>
+      </ac:macro>
+      <p att="[[EMAIL_82e73bd5]]">Eva Mueller hat geantwortet.</p>
+    </ac:layout>
+  </root>
+  '''
+# ---

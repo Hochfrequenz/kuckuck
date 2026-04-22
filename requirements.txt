@@ -6,16 +6,51 @@
 #
 annotated-types==0.7.0
     # via pydantic
+beautifulsoup4==4.13.5
+    # via extract-msg
 cffi==2.0.0
     # via cryptography
+colorclass==2.2.2
+    # via oletools
+compressed-rtf==1.0.7
+    # via extract-msg
 cryptography==46.0.7
-    # via kuckuck (pyproject.toml)
+    # via
+    #   kuckuck (pyproject.toml)
+    #   msoffcrypto-tool
 dnspython==2.8.0
     # via email-validator
+easygui==0.98.3
+    # via oletools
+ebcdic==1.1.1
+    # via extract-msg
 email-validator==2.3.0
+    # via kuckuck (pyproject.toml)
+extract-msg==0.55.0
     # via kuckuck (pyproject.toml)
 idna==3.12
     # via email-validator
+lark==1.3.1
+    # via rtfde
+lxml==6.1.0
+    # via kuckuck (pyproject.toml)
+markdown-it-py==4.0.0
+    # via kuckuck (pyproject.toml)
+mdurl==0.1.2
+    # via markdown-it-py
+msoffcrypto-tool==6.0.0
+    # via oletools
+olefile==0.47
+    # via
+    #   extract-msg
+    #   msoffcrypto-tool
+    #   oletools
+oletools==0.60.2
+    # via
+    #   pcodedmp
+    #   rtfde
+pcodedmp==1.2.6
+    # via oletools
 phonenumbers==9.0.28
     # via kuckuck (pyproject.toml)
 pyahocorasick==2.3.0
@@ -30,12 +65,23 @@ pydantic-core==2.46.3
     # via pydantic
 pydantic-settings==2.14.0
     # via kuckuck (pyproject.toml)
+pyparsing==3.3.2
+    # via oletools
 python-dotenv==1.2.2
     # via
     #   kuckuck (pyproject.toml)
     #   pydantic-settings
+red-black-tree-mod==1.22
+    # via extract-msg
+rtfde==0.1.2.2
+    # via extract-msg
+selectolax==0.4.7
+    # via kuckuck (pyproject.toml)
+soupsieve==2.8.3
+    # via beautifulsoup4
 typing-extensions==4.15.0
     # via
+    #   beautifulsoup4
     #   pydantic
     #   pydantic-core
     #   typing-inspection
@@ -43,3 +89,5 @@ typing-inspection==0.4.2
     # via
     #   pydantic
     #   pydantic-settings
+tzlocal==5.3.1
+    # via extract-msg

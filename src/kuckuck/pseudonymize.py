@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
@@ -14,6 +15,7 @@ from kuckuck.detectors.handle import HandleDetector
 from kuckuck.detectors.phone import PhoneDetector
 from kuckuck.detectors.resolver import resolve_spans
 from kuckuck.mapping import Mapping, MappingEntry
+from kuckuck.preprocessors.base import Preprocessor
 
 #: The wire format for a single pseudonym occurrence in the output text.
 TOKEN_TEMPLATE = "[[{entity}_{token}]]"
@@ -110,13 +112,14 @@ def _allocate_token(
     return token
 
 
-def pseudonymize_text(  # pylint: disable=too-many-locals
+def pseudonymize_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
     text: str,
     master: SecretStr,
     detectors: list[Detector] | None = None,
     *,
     mapping: Mapping | None = None,
     sequential_tokens: bool = False,
+    preprocessor: Preprocessor | None = None,
 ) -> PseudonymizeResult:
     """Pseudonymize *text* in-memory and return the result.
 
@@ -124,12 +127,53 @@ def pseudonymize_text(  # pylint: disable=too-many-locals
     consistency). When *sequential_tokens* is ``True``, tokens are assigned as
     sequential per-type counters within the current document instead of HMAC
     fingerprints — this loses cross-doc stability but keeps the output short.
+
+    When *preprocessor* is provided, *text* is split into format-aware
+    chunks (e.g. mail body excluding headers, Markdown excluding code
+    fences) before pseudonymization, then reassembled. The shared
+    *mapping* keeps token IDs consistent across chunks.
     """
     if detectors is None:
         detectors = build_default_detectors()
     if mapping is None:
         mapping = Mapping()
 
+    if preprocessor is not None:
+        return _pseudonymize_with_preprocessor(
+            text,
+            master,
+            detectors,
+            mapping=mapping,
+            sequential_tokens=sequential_tokens,
+            preprocessor=preprocessor,
+        )
+
+    return _pseudonymize_chunk(
+        text,
+        master,
+        detectors,
+        mapping=mapping,
+        sequential_tokens=sequential_tokens,
+    )
+
+
+def _pseudonymize_chunk(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
+    text: str,
+    master: SecretStr,
+    detectors: list[Detector],
+    *,
+    mapping: Mapping,
+    sequential_tokens: bool,
+    sequential_counters: dict[EntityType, int] | None = None,
+) -> PseudonymizeResult:
+    """Run the detector pipeline on a single text region.
+
+    Splitting the per-chunk loop into its own helper lets the
+    preprocessor path share the same span-resolution logic without
+    re-implementing the cursor walk. *sequential_counters* is threaded
+    through so cross-chunk allocations under ``--sequential-tokens``
+    keep counting up instead of restarting per chunk.
+    """
     own_spans = _find_own_tokens(text)
     raw_spans: list[Span] = []
     for det in detectors:
@@ -137,7 +181,10 @@ def pseudonymize_text(  # pylint: disable=too-many-locals
     filtered = [s for s in raw_spans if not any(s.overlaps(own) for own in own_spans)]
     resolved = resolve_spans(filtered)
 
-    sequential_counters: dict[EntityType, int] | None = {} if sequential_tokens else None
+    if sequential_counters is None and sequential_tokens:
+        sequential_counters = {}
+    counters = sequential_counters
+
     replaced_ordered: list[Span] = []
     output_chunks: list[str] = []
     cursor = 0
@@ -147,13 +194,88 @@ def pseudonymize_text(  # pylint: disable=too-many-locals
             master=master,
             mapping=mapping,
             span=span,
-            sequential_counters=sequential_counters,
+            sequential_counters=counters,
         )
         output_chunks.append(TOKEN_TEMPLATE.format(entity=span.entity_type.value, token=token))
         replaced_ordered.append(span)
         cursor = span.end
     output_chunks.append(text[cursor:])
     return PseudonymizeResult(text="".join(output_chunks), mapping=mapping, replaced=replaced_ordered)
+
+
+def _pseudonymize_with_preprocessor(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    text: str,
+    master: SecretStr,
+    detectors: list[Detector],
+    *,
+    mapping: Mapping,
+    sequential_tokens: bool,
+    preprocessor: Preprocessor,
+) -> PseudonymizeResult:
+    """Drive the pipeline through *preprocessor*'s extract/reassemble cycle."""
+    chunks = preprocessor.extract(text)
+    sequential_counters: dict[EntityType, int] | None = {} if sequential_tokens else None
+    all_replaced: list[Span] = []
+    for chunk in chunks:
+        result = _pseudonymize_chunk(
+            chunk.text,
+            master,
+            detectors,
+            mapping=mapping,
+            sequential_tokens=sequential_tokens,
+            sequential_counters=sequential_counters,
+        )
+        chunk.text = result.text
+        all_replaced.extend(result.replaced)
+    rebuilt = preprocessor.reassemble(text, chunks)
+    return PseudonymizeResult(text=rebuilt, mapping=mapping, replaced=all_replaced)
+
+
+def pseudonymize_msg_file(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    path: Path,
+    master: SecretStr,
+    detectors: list[Detector] | None = None,
+    *,
+    mapping: Mapping | None = None,
+    sequential_tokens: bool = False,
+) -> PseudonymizeResult:
+    """Pseudonymize an Outlook ``.msg`` compound document at *path*.
+
+    .msg files are OLE binaries; they cannot be decoded as UTF-8 text.
+    This wrapper hands the path directly to :class:`MsgPreprocessor`,
+    pseudonymizes each extracted body chunk through the shared
+    detector / mapping plumbing, and returns the rebuilt plain-text body.
+
+    Output is intentionally text-only: round-tripping the .msg compound
+    structure is out of scope. Callers wanting to preserve the original
+    binary file should keep a copy before invoking this helper.
+    """
+    # Imported here so the optional preprocessors module isn't loaded
+    # at import time of pseudonymize (keeps the cold-start cheap).
+    from kuckuck.preprocessors.msg import MsgPreprocessor  # pylint: disable=import-outside-toplevel
+
+    if detectors is None:
+        detectors = build_default_detectors()
+    if mapping is None:
+        mapping = Mapping()
+
+    preprocessor = MsgPreprocessor()
+    chunks = preprocessor.extract(path)
+    sequential_counters: dict[EntityType, int] | None = {} if sequential_tokens else None
+    all_replaced: list[Span] = []
+    for chunk in chunks:
+        result = _pseudonymize_chunk(
+            chunk.text,
+            master,
+            detectors,
+            mapping=mapping,
+            sequential_tokens=sequential_tokens,
+            sequential_counters=sequential_counters,
+        )
+        chunk.text = result.text
+        all_replaced.extend(result.replaced)
+    rebuilt = preprocessor.reassemble(path, chunks)
+    return PseudonymizeResult(text=rebuilt, mapping=mapping, replaced=all_replaced)
 
 
 def restore_text(text: str, mapping: Mapping) -> str:

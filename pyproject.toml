@@ -28,6 +28,14 @@ dependencies = [
     "phonenumbers>=8.13",
     "pyahocorasick>=2.1",
     "email-validator>=2.2",
+    # Format-aware preprocessors. Lower bounds chosen to track the
+    # minimum versions actually exercised by the test suite. We avoid
+    # upper bounds to stay flexible for dependency-update bots; the
+    # surface we use is small and stable in each library.
+    "extract-msg>=0.52",
+    "markdown-it-py>=3",
+    "lxml>=5",
+    "selectolax>=0.3",
 ]
 dynamic = ["readme", "version"]
 
