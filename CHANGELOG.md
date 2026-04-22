@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Single-binary release per platform** (Issue [#14](https://github.com/Hochfrequenz/kuckuck/issues/14)).
+  The four slim/NER/MCP/NER+MCP PyInstaller variants per OS have been collapsed into one fat `kuckuck_<os>` binary that includes CLI, MCP-server, and GLiNER PERSON detection.
+  MCP clients now configure `command: "kuckuck", args: ["mcp", "serve"]` instead of a separate `kuckuck-mcp` command.
+  Total release artifacts go from 8 to 2 (`kuckuck_windows_<ver>.exe`, `kuckuck_macos_arm64_<ver>`).
+
 ### Added
 
+- **`kuckuck mcp serve` subcommand** delegating to the FastMCP server.
+  The standalone `kuckuck-mcp` console script still works (pip-install backward compatibility); `kuckuck mcp serve` is the recommended invocation for new installs and the single-binary release.
 - **Claude Code PreToolUse hook** (Issue [#9](https://github.com/Hochfrequenz/kuckuck/issues/9)).
   Shell (`integrations/claude-code/kuckuck-pseudo.sh`) and PowerShell (`integrations/claude-code/kuckuck-pseudo.ps1`) scripts that auto-pseudonymize `.eml` and `.msg` files before every `Read` / `Edit` / `Grep`.
   Default is fail-closed: missing `kuckuck`, missing `jq` (POSIX) or a failing run blocks the tool call.
@@ -29,10 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All pseudonymization tools are `file_path`-based — a text-input variant would have leaked PII through the tool argument.
   No MCP resources exposed (mapping inspection stays local via `kuckuck inspect`).
   Tool-arguments are workspace-confined via `KUCKUCK_MCP_ALLOWED_ROOTS` (default `$PWD`), so the model cannot trigger writes outside the configured roots.
-- **Four MCP-enabled PyInstaller binaries** alongside the existing CLI binaries:
-  `kuckuck-mcp_windows[.exe]` (~ 43 MB, slim+MCP) and `kuckuck-mcp_*_ner[.exe]` (~ 305 MB, NER+MCP) for Windows and macOS arm64.
-  The "MCP NER" binary is the recommended download for non-technical users who want the coding-assistant integration with PERSON detection out of the box.
-  CLI-only binaries (`kuckuck_*`) explicitly do NOT contain the MCP server; the binary matrix in the README documents which variant has what.
 - Setup guides plus example configs for Claude Code, opencode and Claude Desktop in `integrations/mcp/`.
 - AGENTS.md updated with the rule: read FastMCP docs before changing `src/kuckuck_mcp/`, return-types are pydantic `BaseModel` not `TypedDict`.
 

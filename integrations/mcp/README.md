@@ -1,6 +1,9 @@
 # Kuckuck MCP-Server
 
-Der `kuckuck-mcp` Server exponiert Kuckuck als Set MCP-Tools, sodass MCP-fähige Coding-Assistenten (Claude Desktop, Claude Code, Cursor, Cline, Zed, opencode, ...) Pseudonymisierung direkt aufrufen können — ohne pro-Client-Hook und ohne Konvention via AGENTS.md.
+Der Kuckuck-MCP-Server exponiert Kuckuck als Set MCP-Tools, sodass MCP-fähige Coding-Assistenten (Claude Desktop, Claude Code, Cursor, Cline, Zed, opencode, ...) Pseudonymisierung direkt aufrufen können — ohne pro-Client-Hook und ohne Konvention via AGENTS.md.
+
+Der Server wird über den `kuckuck mcp serve`-Subcommand gestartet.
+Der frühere `kuckuck-mcp` Console-Script funktioniert weiter (pip-Backward-Compat), ist aber nicht mehr der empfohlene Weg.
 
 ## Installation
 
@@ -9,27 +12,29 @@ Zwei Wege:
 **(a) Via pip (empfohlen wenn du Python im Setup hast)**:
 
 ```bash
-pip install "kuckuck[mcp,ner]"
+pip install "kuckuck[cli,mcp,ner]"
 ```
 
-`[mcp]` zieht FastMCP `>=3` und die MCP-Lib, `[ner]` zusätzlich GLiNER+torch für die PERSON-Name-Erkennung.
-Nach dem Install ist `kuckuck-mcp` als Console-Script verfügbar:
+`[cli]` bringt den Subcommand-Router `kuckuck`, `[mcp]` zieht FastMCP `>=3` und die MCP-Lib, `[ner]` zusätzlich GLiNER+torch für die PERSON-Name-Erkennung.
+Nach dem Install ist `kuckuck` als Console-Script verfügbar:
 
 ```bash
-which kuckuck-mcp
-# /home/you/.local/bin/kuckuck-mcp  oder ähnlich
+which kuckuck
+# /home/you/.local/bin/kuckuck  oder ähnlich
+kuckuck mcp --help
 ```
 
 **(b) Als Standalone-Binary** (empfohlen für non-technical User):
 
-Auf der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases/latest) gibt es vier MCP-Binary-Varianten pro Plattform:
+Auf der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases/latest) gibt es **ein Binary pro Plattform** - es enthält CLI, MCP-Server und NER in einem:
 
-| Datei | Größe | Was drin |
+| Plattform | Datei | Größe |
 |---|---|---|
-| `kuckuck-mcp_windows_<ver>.exe` / `kuckuck-mcp_macos_arm64_<ver>` | ~ 43 MB | Slim + MCP. Regex-Detektoren, kein PERSON-Namen. |
-| `kuckuck-mcp_windows_ner_<ver>.exe` / `kuckuck-mcp_macos_arm64_ner_<ver>` | ~ 305 MB | NER + MCP. Empfohlen für beste Ergebnisse out-of-the-box. |
+| Windows | `kuckuck_windows_<ver>.exe` | ~ 300 MB |
+| macOS Apple Silicon | `kuckuck_macos_arm64_<ver>` | ~ 300 MB |
 
-Für den MCP-Server brauchst du entweder einen `-mcp`-Binary oder den pip-Install — die "normalen" `kuckuck_*` Binaries (ohne `-mcp`) sind reine CLI.
+Nach dem Download umbenennen (`kuckuck.exe` bzw. `kuckuck`) und auf `PATH` legen.
+MCP-Clients starten den Server mit `command: "kuckuck", args: ["mcp", "serve"]`.
 
 ## Welche Dateien darf der Server anfassen?
 
@@ -89,7 +94,8 @@ Datei (je nach Scope):
 {
   "mcpServers": {
     "kuckuck": {
-      "command": "kuckuck-mcp",
+      "command": "kuckuck",
+      "args": ["mcp", "serve"],
       "env": {
         "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"
       }
@@ -111,7 +117,7 @@ Datei: `opencode.json` projekt-lokal oder `~/.config/opencode/opencode.json` glo
   "mcp": {
     "kuckuck": {
       "type": "local",
-      "command": ["kuckuck-mcp"],
+      "command": ["kuckuck", "mcp", "serve"],
       "enabled": true,
       "environment": {
         "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"
@@ -135,7 +141,8 @@ Datei (je nach OS):
 {
   "mcpServers": {
     "kuckuck": {
-      "command": "kuckuck-mcp",
+      "command": "kuckuck",
+      "args": ["mcp", "serve"],
       "env": {
         "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"
       }
@@ -146,6 +153,11 @@ Datei (je nach OS):
 
 Restart Claude Desktop nach dem Editieren.
 Siehe `claude_desktop.json` in diesem Ordner als Vorlage.
+
+### Legacy: `kuckuck-mcp` Console-Script
+
+Wenn du Kuckuck via pip installiert hast und bereits `command: "kuckuck-mcp"` in deiner Config stehen hast, funktioniert das weiter - der Console-Script-Alias bleibt als Backward-Compat erhalten.
+Für neue Installs und Binary-Nutzer ist `command: "kuckuck", args: ["mcp", "serve"]` die empfohlene Form, weil das Binary nur die `kuckuck`-Variante exportiert.
 
 ## Verifikation
 
