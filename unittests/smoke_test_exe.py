@@ -2,7 +2,7 @@
 
 Invoked by the :file:`.github/workflows/build_executable.yml` pipeline after
 the PyInstaller stage. Takes the binary path as the sole argument and runs
-four checks:
+five checks:
 
 1. ``--version`` exits 0 and prints a non-empty string.
 2. ``init-key``, ``run`` and ``restore`` round-trip a document end-to-end.
@@ -11,6 +11,10 @@ four checks:
    ``settings.json`` entry. This guards against PyInstaller regressions
    that would strip ``kuckuck/_hooks/*`` from the bundle (``--collect-data
    kuckuck`` needs the package to be installed, not just on PYTHONPATH).
+5. ``kuckuck mcp --help`` works and mentions ``serve``. This guards
+   against the MCP subpackage being dropped from the single-binary
+   release - the fat ``kuckuck_<os>`` build lives or dies by its
+   MCP-server mode working.
 
 Exits non-zero on any failure so CI surfaces the binary as broken. The
 script is intentionally dependency-free - it must run against the cold
@@ -99,7 +103,33 @@ def main(binary: str) -> int:  # pylint: disable=too-many-return-statements
         if (rc := _check_install_claude_hook(binary, Path(workspace) / "hook-check")) != 0:
             return rc
 
+        if (rc := _check_mcp_subcommand(binary)) != 0:
+            return rc
+
     print("smoke test passed")
+    return 0
+
+
+def _check_mcp_subcommand(binary: str) -> int:
+    """Assert that 'kuckuck mcp --help' works and lists 'serve'.
+
+    We cannot actually start the MCP server from a smoke test - it blocks
+    waiting on stdio. Instead we exercise the subcommand's help output,
+    which forces Typer to register the sub-app and catches the common
+    regressions: subcommand group missing, help text broken, the binary
+    built without --collect-data kuckuck_mcp or --collect-all fastmcp.
+    """
+    help_result = _run(binary, ["mcp", "--help"])
+    if help_result.returncode != 0:
+        print("kuckuck mcp --help failed", file=sys.stderr)
+        return 1
+    if "serve" not in help_result.stdout:
+        print("kuckuck mcp --help did not list 'serve' subcommand", file=sys.stderr)
+        return 1
+    serve_help = _run(binary, ["mcp", "serve", "--help"])
+    if serve_help.returncode != 0:
+        print("kuckuck mcp serve --help failed", file=sys.stderr)
+        return 1
     return 0
 
 
