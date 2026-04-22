@@ -341,6 +341,17 @@ restored = restore_text(source.read_text(encoding="utf-8"), result.mapping)
 ## Integration mit KI-Assistenten
 
 Wenn du Claude Code, Cursor, GitHub Copilot, Codex oder ähnliche Coding-Assistenten benutzt, die Dateien in deinem Repo lesen können, kannst du ihnen beibringen, Dokumente mit personenbezogenen Daten **immer** zuerst durch Kuckuck zu schicken.
+Je nach Client gibt es vier Schutzebenen, die sich stapeln lassen:
+
+| Stufe | Mechanismus | Client-Support | Wann sinnvoll |
+|---|---|---|---|
+| 1 | Konvention via `AGENTS.md` / `CLAUDE.md` | alle | Minimal-Setup, wenn nichts weiter geht |
+| 2 | [Claude-Code-Hook](#claude-code-pretooluse-hook) (dieses Repo) | nur Claude Code | Defense-in-Depth: blockt `Read(*.eml)` auch ohne MCP |
+| 3 | [MCP-Server](#mcp-server-empfohlen) (dieses Repo) | Claude Code, Cursor, Cline, Zed, opencode, Claude Desktop | Empfohlen - aktive `kuckuck_pseudonymize`-Tool-Calls |
+| 4 | opencode-Plugin | opencode | Folge-Issue; macht dasselbe wie (2), nur für opencode |
+
+Best-Practice mit Claude Code: **(1) + (2) + (3) kombinieren**.
+MCP-Server als aktive Schnittstelle, Hook als passiver Safety-Net, AGENTS.md als letzte Verteidigung.
 
 ### MCP-Server (empfohlen)
 
@@ -354,6 +365,20 @@ pip install "kuckuck[mcp]"
 
 Setup-Anleitungen für Claude Code, opencode und Claude Desktop: siehe [`integrations/mcp/README.md`](integrations/mcp/README.md).
 Beispiel-Configs liegen daneben.
+
+### Claude-Code-PreToolUse-Hook
+
+Zusätzlich zum MCP-Server kann Claude Code einen PreToolUse-Hook aufrufen, der `Read`, `Edit` und `Grep` auf `*.eml`/`*.msg`-Dateien abfängt und sie vorher durch Kuckuck schickt.
+Der Hook ist Defense-in-Depth: auch wenn das Modell vergisst, das `kuckuck_pseudonymize` MCP-Tool aufzurufen, landet kein Klartext-PII im Claude-Kontext.
+
+```bash
+pip install "kuckuck[cli]"
+apt install jq             # bzw. 'brew install jq', 'winget install jqlang.jq'
+kuckuck install-claude-hook
+```
+
+Das CLI-Kommando legt das Shell-Script (oder `.ps1` unter Windows) unter `.claude/hooks/kuckuck-pseudo.sh` ab und merged den Hook-Eintrag idempotent in `.claude/settings.json`.
+Setup, Fail-Closed-Semantik und Troubleshooting: siehe [`integrations/claude-code/README.md`](integrations/claude-code/README.md).
 
 ### AGENTS.md / CLAUDE.md Snippet (Fallback)
 
