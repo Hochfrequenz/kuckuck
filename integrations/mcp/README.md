@@ -22,7 +22,7 @@ which kuckuck-mcp
 
 **(b) Als Standalone-Binary** (empfohlen für non-technical User):
 
-Auf der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases) gibt es vier MCP-Binary-Varianten pro Plattform:
+Auf der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases/latest) gibt es vier MCP-Binary-Varianten pro Plattform:
 
 | Datei | Größe | Was drin |
 |---|---|---|
