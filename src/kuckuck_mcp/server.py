@@ -1,19 +1,36 @@
-"""FastMCP server exposing Kuckuck as four tools over MCP stdio.
+"""FastMCP server exposing Kuckuck as five tools and four prompts over MCP stdio.
 
 Tools:
 
 * ``kuckuck_pseudonymize`` -- wraps :func:`kuckuck.run_pseudonymize` for one
   file at a time, returns a short status line. No PII flows through this
   tool: cleartext goes in (the client provides a path), tokens come out.
+  Default ``ner=auto`` uses GLiNER PERSON detection when both the
+  ``[ner]`` extra and the model snapshot are available, falls back to
+  regex-only otherwise.
 * ``kuckuck_restore`` -- the only tool that can leak cleartext PII into the
   model context. Gated behind a FastMCP elicitation: the user must
   explicitly accept a "yes" / "no" prompt on the client side before the
   restored text is returned.
+* ``kuckuck_fetch_model`` -- one-time downloader for the ~ 1.1 GB GLiNER
+  snapshot. Gated behind an elicitation so a multi-GB transfer never
+  starts silently. Required for PERSON detection in ``ner=auto``.
 * ``kuckuck_list_detectors`` -- metadata only, lists active detectors with
   their priority and entity-type.
 * ``kuckuck_status`` -- health-check: master key present? GLiNER installed?
-  Model snapshot on disk? Useful for the model to introspect why
-  ``--ner`` would fail before invoking pseudonymize.
+  Model snapshot on disk? Returns an aggregated ``problems`` list with
+  remediation hints (pattern from Hochfrequenz/sap-mcp-config).
+
+Prompts (quick-actions surfaced in the MCP-client slash menu):
+
+* ``setup_kuckuck`` -- first-time setup walkthrough: key, [ner] extra,
+  model download. Use when a fresh user asks "how do I start?".
+* ``pseudonymize_before_reading`` -- safe sequence "pseudonymize first,
+  then read" for a given file_path.
+* ``diagnose_kuckuck_setup`` -- runs kuckuck_status and formats the
+  remediation steps for the user.
+* ``explain_kuckuck_tokens`` -- explains the [[EMAIL_xxx]] / [[PERSON_xxx]]
+  tokens and how to restore them locally.
 
 Architectural notes:
 
