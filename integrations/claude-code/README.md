@@ -2,14 +2,43 @@
 
 Bevor Claude Code eine `.eml`- oder `.msg`-Datei mit `Read`, `Edit` oder `Grep` anfasst, läuft die Datei durch `kuckuck run`. Klartext-Adressen, Namen und Telefonnummern sind danach durch `[[EMAIL_…]]`, `[[PERSON_…]]`, `[[PHONE_…]]` ersetzt. Claude sieht nur den pseudonymisierten Inhalt.
 
-## Quick-Start (3 Minuten)
+## Was du vorher brauchst
 
-Voraussetzung: du hast ein Kuckuck-Projekt mit `.kuckuck-key` oder eine user-globale Key-Datei. Wenn nicht, erst `kuckuck init-key --project` in deinem Projekt laufen lassen.
+- Einen Claude-Code-Account und das CLI (Install: [claude.com/claude-code](https://claude.com/claude-code)).
+- Python 3.11 oder neuer mit `pip`.
+- Ein Projekt-Verzeichnis, in dem du arbeiten willst.
+
+## Einrichten (5 Schritte)
+
+**1. Kuckuck-CLI installieren** (einmalig pro Rechner):
 
 ```bash
-pip install "kuckuck[cli]"          # falls noch nicht geschehen
-sudo apt install jq                 # Linux;   macOS: 'brew install jq'; Windows: 'winget install jqlang.jq'
+pip install "kuckuck[cli]"
+```
+
+**2. `jq` installieren** (einmalig pro Rechner - der Hook nutzt es, um das JSON von Claude Code zu parsen):
+
+```bash
+# Linux
+sudo apt install jq
+# macOS
+brew install jq
+# Windows
+winget install jqlang.jq
+```
+
+**3. Master-Key anlegen** (einmalig pro Projekt - verschlüsselt das Token-Mapping, das die Pseudonymisierung reversibel macht):
+
+```bash
 cd /pfad/zu/deinem/projekt
+kuckuck init-key --project
+```
+
+Alternativ user-global (gilt für alle Projekte, solange du nichts Projekt-Lokales überschreibst): `kuckuck init-key`.
+
+**4. Hook installieren**:
+
+```bash
 kuckuck install-claude-hook
 ```
 
@@ -21,9 +50,13 @@ Updated settings: /pfad/zu/deinem/projekt/.claude/settings.json
 Restart Claude Code or run /hooks to reload the settings.
 ```
 
-Starte Claude Code jetzt neu (oder tippe `/hooks` im Chat, um die Settings ohne Neustart neu zu lesen).
+**5. Claude Code starten** (bzw. neustarten, falls es schon lief; alternativ `/hooks` im Chat tippen, um die Settings ohne Neustart zu reloaden):
 
-## Überprüfen, dass es wirkt
+```bash
+claude                          # oder wie immer du Claude Code aufrufst
+```
+
+## Verifizieren, dass es wirkt
 
 1. Lege eine Testdatei an:
 
@@ -47,7 +80,9 @@ Starte Claude Code jetzt neu (oder tippe `/hooks` im Chat, um die Settings ohne 
 
 4. Zum Aufräumen: `kuckuck restore test.eml && rm test.eml test.eml.kuckuck-map.enc`.
 
-Wenn dein Chat die Tokens `[[EMAIL_…]]` enthält und die Sidecar-Datei da ist, wirkt der Hook wie beabsichtigt.
+Wenn dein Chat die Tokens `[[EMAIL_…]]` enthält und die Sidecar-Datei da ist, wirkt der Hook wie beabsichtigt. Fertig.
+
+Falls etwas nicht klappt: siehe **Troubleshooting** weiter unten.
 
 ---
 
