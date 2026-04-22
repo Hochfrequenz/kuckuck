@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `kuckuck-mcp_windows[.exe]` (~ 43 MB, slim+MCP) and `kuckuck-mcp_*_ner[.exe]` (~ 305 MB, NER+MCP) for Windows and macOS arm64.
   The "MCP NER" binary is the recommended download for non-technical users who want the coding-assistant integration with PERSON detection out of the box.
   CLI-only binaries (`kuckuck_*`) explicitly do NOT contain the MCP server; the binary matrix in the README documents which variant has what.
-- Setup guides plus example configs for Claude Desktop, Claude Code, Cursor and opencode in `integrations/mcp/`.
+- Setup guides plus example configs for Claude Code, opencode and Claude Desktop in `integrations/mcp/`.
 - AGENTS.md updated with the rule: read FastMCP docs before changing `src/kuckuck_mcp/`, return-types are pydantic `BaseModel` not `TypedDict`.
 
 ## [0.1.0] - 2026-04-22

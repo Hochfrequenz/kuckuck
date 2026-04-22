@@ -29,22 +29,15 @@ Auf der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases/latest
 | `kuckuck-mcp_windows_<ver>.exe` / `kuckuck-mcp_macos_arm64_<ver>` | ~ 43 MB | Slim + MCP. Regex-Detektoren, kein PERSON-Namen. |
 | `kuckuck-mcp_windows_ner_<ver>.exe` / `kuckuck-mcp_macos_arm64_ner_<ver>` | ~ 305 MB | NER + MCP. Empfohlen für beste Ergebnisse out-of-the-box. |
 
-Die "normalen" `kuckuck_*.exe` Binaries (ohne `-mcp`) enthalten den MCP-Server **nicht** — sie sind nur die CLI.
-Für den MCP-Server brauchst du entweder einen `-mcp`-Binary oder den pip-Install.
+Für den MCP-Server brauchst du entweder einen `-mcp`-Binary oder den pip-Install — die "normalen" `kuckuck_*` Binaries (ohne `-mcp`) sind reine CLI.
 
-## Welche Dateien darf der Server überhaupt anfassen?
+## Welche Dateien darf der Server anfassen?
 
-Der Server macht **destruktive Änderungen** (in-place Pseudonymisierung), deshalb ist standardmäßig der Pfad-Bereich eingeschränkt: nur Dateien unter dem `$PWD` zum Server-Start dürfen gelesen oder geschrieben werden.
-Der MCP-Client startet den Server-Subprocess in seinem eigenen Working-Directory — das ist meistens **nicht** dein Repo-Root.
-Empfehlung: setze `KUCKUCK_MCP_ALLOWED_ROOTS` explizit im MCP-Client-Config auf einen oder mehrere absolute Pfade (Doppelpunkt-getrennt).
+Per Default nur Dateien unter dem `$PWD` zum Server-Start.
+Bei editor-basierten Clients (Claude Code, opencode) ist das automatisch dein Projekt-Root, weil der Editor den Server-Subprocess von dort startet.
+Das `kuckuck_pseudonymize`-Tool ist außerdem mit dem MCP-`destructiveHint` markiert, sodass der Client vor dem Aufruf eine Bestätigung einholen kann.
 
-```jsonc
-"env": {
-  "KUCKUCK_MCP_ALLOWED_ROOTS": "/home/me/work:/home/me/inbox"
-}
-```
-
-Spezialwert `*` deaktiviert die Beschränkung komplett — **nicht empfohlen**, weil das LLM dann z. B. `/etc/passwd` als file_path angeben und überschreiben könnte.
+Wenn du den Bereich erweitern oder anders setzen willst, geht das via `KUCKUCK_MCP_ALLOWED_ROOTS` (Doppelpunkt-getrennte absolute Pfade, oder `*` zum komplett deaktivieren — letzteres nur in Throwaway-Umgebungen).
 
 ## Wie der Server an deinen privaten Key kommt
 
@@ -58,24 +51,10 @@ Reihenfolge (höchste → niedrigste Präferenz):
 Der MCP-Server-Prozess wird vom MCP-Client gestartet; das `$PWD` ist also das Working-Directory des Clients, nicht zwingend dein Projekt-Verzeichnis.
 Empfehlung für die meisten Setups: setze `KUCKUCK_KEY_FILE` explizit im MCP-Server-Config, dann bist du unabhängig vom Client-Workdir.
 
-Kein Key gefunden? Der `kuckuck_status` MCP-Tool gibt dir eine klare Diagnose:
-
-```json
-{
-  "key_found": false,
-  "key_error": "no key file in the configured lookup chain",
-  "gliner_installed": true,
-  "model_available": false,
-  "model_path": "/home/you/.cache/kuckuck/models/gliner_multi-v2.1",
-  "problems": [
-    "No master key found. Set KUCKUCK_KEY_FILE in your MCP client config to an absolute path, or run 'kuckuck init-key' once to create ~/.config/kuckuck/key. Lookup error: no key file in the configured lookup chain",
-    "NER model snapshot missing at /home/you/.cache/kuckuck/models/gliner_multi-v2.1. Either run `kuckuck fetch-model` in a shell, or call the kuckuck_fetch_model MCP tool from this server (it will ask for confirmation before the ~ 1.1 GB download)."
-  ]
-}
-```
-
-`key_error` ist absichtlich generisch — wir leaken keine absoluten Pfade ins Modell-Kontextfenster.
-Die konkreten Remediation-Hinweise stehen in `problems`.
+Kein Key gefunden, oder unsicher ob der Server überhaupt erkannt wurde?
+Frag dein LLM: "Listet bitte die kuckuck-mcp Tools auf und ruft `kuckuck_status` auf."
+In Claude Code / opencode kannst du auch direkt `/mcp` (bzw. `/mcps`) eintippen, das listet alle erkannten MCP-Server samt Tools.
+`kuckuck_status` liefert eine `problems`-Liste mit konkreten Remediation-Hinweisen — die kann der Assistent dir direkt vorlesen und durcharbeiten.
 
 Erstmal Key anlegen:
 
@@ -85,56 +64,20 @@ kuckuck init-key --project          # ./.kuckuck-key (Projekt-lokal)
 kuckuck init-key --key-file PATH    # eigener Pfad
 ```
 
-## Verfügbare Tools
+## Verfügbare Tools und Prompts
 
-| Tool | Was es macht | PII-Leak ins Modell? |
-|---|---|---|
-| `kuckuck_pseudonymize(file_path, format=auto, ner=auto, dry_run=false)` | Pseudonymisiert die Datei in-place, schreibt Mapping-Sidecar daneben. `ner=auto` (default) nutzt NER wenn verfügbar, fällt auf Regex-only zurück wenn `gliner` oder Modell fehlen. `ner=true` erzwingt NER (Tool-Error wenn Setup fehlt), `ner=false` deaktiviert NER explizit. | Nein - nur Status-Line ("ok: foo.eml -> 4 replacements") |
-| `kuckuck_restore(file_path)` | Restored Klartext aus dem Sidecar-Mapping | Ja - **gated über FastMCP-Elicitation**: User muss aktiv "yes" bestätigen |
-| `kuckuck_fetch_model()` | Lädt das ~ 1.1 GB GLiNER-Snapshot in den Cache. Einmal nötig, damit `ner=auto` PERSON-Namen erkennt. | Nein - aber **gated über Elicitation**: User muss den Download mit "yes" bestätigen, der Server startet keinen Multi-GB-Transfer still. |
-| `kuckuck_list_detectors()` | Listet aktive Detektoren (email, phone, handle, term, ner) | Nein |
-| `kuckuck_status()` | Self-Diagnose (key found, gliner installiert, model on disk) plus aggregierte `problems`-Liste mit Remediation-Hinweisen | Nein |
+Der Server stellt fünf Tools (`kuckuck_pseudonymize`, `kuckuck_restore`, `kuckuck_fetch_model`, `kuckuck_list_detectors`, `kuckuck_status`) und vier Prompts (`setup_kuckuck`, `pseudonymize_before_reading`, `diagnose_kuckuck_setup`, `explain_kuckuck_tokens`) bereit.
+Jedes Tool/Prompt hat einen Docstring mit Signatur, Parameter-Beschreibung und Gebrauchshinweisen — MCP-Clients (z. B. Claude Code via `/mcp`, opencode via `/mcps`) zeigen diese direkt im Tool-Picker an.
+Die Docstrings sind die Source-of-Truth; sie hier nochmal zu duplizieren würde nur verrotten.
 
-Alle Pseudonymisierungs-Tools nehmen einen `file_path`, kein direktes Text-Argument.
-Hätte Kuckuck ein `kuckuck_pseudonymize_text(text="Hallo Anna Müller, ...")` exponiert, würde der Klartext im Tool-Call-Argument stehen — also im Modell-Kontext, im Conversation-Log, in den Provider-Telemetrie-Logs.
-Mit `file_path` liest der Server die Datei direkt vom Filesystem; das LLM sieht den Inhalt nie.
+Zwei Dinge, die man aus den Docstrings allein nicht sieht:
 
-## Verfügbare Prompts
-
-Prompts sind MCP-Discoverability-Templates — die meisten Clients zeigen sie im Slash-Menü oder Quick-Action-Picker.
-Sie generieren keine Side-Effects, sondern liefern dem Modell eine Anleitung in welcher Reihenfolge es die Tools nutzen soll.
-
-| Prompt | Wann nutzen |
-|---|---|
-| `setup_kuckuck` | Wenn der User gerade den MCP-Server installiert hat und fragt "wie geht's los?" - walks through Key, [ner] extra und Modell-Download in der richtigen Reihenfolge. |
-| `pseudonymize_before_reading(file_path)` | Wenn der User dir eine Datei mit potentiellem PII gibt - liefert dem Modell die safe-by-default Sequenz (Pseudonymize first, dann Read). |
-| `diagnose_kuckuck_setup` | Wenn ein `kuckuck_*` Tool fehlschlägt oder der User fragt "stimmt mein Kuckuck-Setup?" - ruft `kuckuck_status` auf und formatiert die Probleme + Remediations. |
-| `explain_kuckuck_tokens` | Wenn das Modell auf `[[EMAIL_xxx]]` / `[[PERSON_xxx]]` Tokens trifft und der User fragt was die bedeuten. |
+- **Kein Text-Input.** Pseudonymisierungs-Tools nehmen nur `file_path`, nie direkten Text. Ein `kuckuck_pseudonymize_text(text="Hallo Anna Müller, ...")` würde den Klartext im Tool-Call-Argument transportieren — also im Modell-Kontext, Conversation-Log und Provider-Telemetrie. Mit `file_path` liest der Server direkt vom Filesystem; das LLM sieht den Klartext nie.
+- **Elicitation auf `kuckuck_restore` und `kuckuck_fetch_model`.** Beide Tools holen vor dem Ausführen eine explizite User-Bestätigung über den MCP-Client ein — der Server disclosed keine Cleartext-PII und startet keinen Multi-GB-Download still.
 
 ## Konfiguration pro Client
 
-### Claude Desktop
-
-Datei (je nach OS):
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- Linux: `~/.config/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "kuckuck": {
-      "command": "kuckuck-mcp",
-      "env": {
-        "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"
-      }
-    }
-  }
-}
-```
-
-Restart Claude Desktop nach dem Editieren.
-Siehe `claude_desktop.json` in diesem Ordner als Vorlage.
+Hochfrequenz-intern: Detail-Infos zu MCP-Konfig-Files stehen unter [brain.hochfrequenz.de — KI-Tools / SAP-MCPs](https://brain.hochfrequenz.de/books/ki-tools-bei-hochfrequenz/chapter/sap-mcps).
 
 ### Claude Code
 
@@ -158,25 +101,6 @@ Datei (je nach Scope):
 Reload via `/mcp` oder Restart.
 Siehe `claude_code.json` in diesem Ordner.
 
-### Cursor
-
-Datei (je nach Scope):
-- Global: `~/.cursor/mcp.json`
-- Projekt-lokal: `.cursor/mcp.json`
-
-```json
-{
-  "mcpServers": {
-    "kuckuck": {
-      "command": "kuckuck-mcp"
-    }
-  }
-}
-```
-
-Restart Cursor.
-Siehe `cursor.json` in diesem Ordner.
-
 ### opencode
 
 Datei: `opencode.json` projekt-lokal oder `~/.config/opencode/opencode.json` global.
@@ -199,6 +123,29 @@ Datei: `opencode.json` projekt-lokal oder `~/.config/opencode/opencode.json` glo
 
 Restart opencode.
 Siehe `opencode.json` in diesem Ordner.
+
+### Claude Desktop
+
+Datei (je nach OS):
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "kuckuck": {
+      "command": "kuckuck-mcp",
+      "env": {
+        "KUCKUCK_KEY_FILE": "/absolute/path/to/.kuckuck-key"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop nach dem Editieren.
+Siehe `claude_desktop.json` in diesem Ordner als Vorlage.
 
 ## Verifikation
 
@@ -231,7 +178,7 @@ Siehe `opencode.json` in diesem Ordner.
 Der Server-Subprocess erbt das Working-Directory des Clients, das ist meistens **nicht** dein Repo-Verzeichnis.
 
 **`kuckuck_restore` antwortet immer mit "cancelled"**: dein MCP-Client unterstützt evtl. keine Elicitation oder hat sie nicht konfiguriert.
-Claude Desktop und Claude Code unterstützen Elicitation; Cursor und opencode haben sie zum Zeitpunkt der Spec-Implementierung noch nicht überall ausgerollt.
+Claude Desktop und Claude Code unterstützen Elicitation; opencode hatte sie zum Zeitpunkt der Spec-Implementierung noch nicht überall ausgerollt.
 Workaround bis dann: nutze `kuckuck restore <file>` lokal in der CLI.
 
 ## Wenn du den Hook (#9) auch installierst

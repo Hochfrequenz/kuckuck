@@ -135,7 +135,7 @@ Es gibt vier Varianten je Plattform — zwei reine CLI-Varianten und zwei MCP-Se
 | MCP NER (empfohlen für Coding-Assistenten) | `kuckuck-mcp_windows_ner_<ver>.exe`, `kuckuck-mcp_macos_arm64_ner_<ver>` | ~ 305 MB | nein | ja | ja |
 
 Die CLI-Varianten startest du mit `kuckuck <file>`; sie enthalten keinen MCP-Server.
-Die MCP-Varianten sind stdio-Server für MCP-Clients (Claude Desktop, Claude Code, Cursor, opencode) — siehe [`integrations/mcp/README.md`](integrations/mcp/README.md) für die Setup-Anleitung pro Client.
+Die MCP-Varianten sind stdio-Server für MCP-Clients (Claude Code, opencode, Claude Desktop) — siehe [`integrations/mcp/README.md`](integrations/mcp/README.md) für die Setup-Anleitung pro Client.
 Die `_ner`-Varianten bringen zusätzlich gliner + CPU-only torch mit, sodass die PERSON-Namen-Erkennung ohne separaten Python-Install funktioniert (Modell wird einmalig via `kuckuck fetch-model` bzw. das `kuckuck_fetch_model` MCP-Tool nachgeladen).
 
 Nach dem Download umbenennen (optional) und Quarantäne-Attribut entfernen:
@@ -352,7 +352,7 @@ pip install "kuckuck[mcp]"
 # danach den MCP-Server in deinem Client eintragen
 ```
 
-Setup-Anleitungen für Claude Desktop, Claude Code, Cursor und opencode: siehe [`integrations/mcp/README.md`](integrations/mcp/README.md).
+Setup-Anleitungen für Claude Code, opencode und Claude Desktop: siehe [`integrations/mcp/README.md`](integrations/mcp/README.md).
 Beispiel-Configs liegen daneben.
 
 ### AGENTS.md / CLAUDE.md Snippet (Fallback)
