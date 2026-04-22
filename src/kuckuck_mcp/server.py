@@ -49,8 +49,10 @@ from pydantic import BaseModel, Field
 
 from kuckuck.config import KeyNotFoundError, load_key
 from kuckuck.detectors.ner import (
+    DEFAULT_MODEL_ID,
     NerModelMissingError,
     NerNotInstalledError,
+    default_cache_root,
     default_model_path,
     is_gliner_installed,
     is_model_available,
@@ -163,6 +165,10 @@ def build_server() -> FastMCP:
             ".eml / .msg / .md / .xml / text file BEFORE you read its contents. "
             "By default it auto-enables NER (PERSON-name detection) when "
             "available, falling back to regex-only otherwise. "
+            "If a user just installed this server and asks how to start, run "
+            "the setup_kuckuck prompt - it walks them through key creation, "
+            "the [ner] extra and (optionally) calling kuckuck_fetch_model to "
+            "download the GLiNER model for best-effort PERSON detection. "
             "kuckuck_restore returns cleartext PII to the client and triggers a "
             "user-confirmation elicitation - do not call it for inspection, only "
             "in deliberate restore workflows."
@@ -302,6 +308,116 @@ def build_server() -> FastMCP:
             detectors.append(NerDetector())
         return [DetectorInfo(name=d.name, priority=d.priority, entity_type=d.entity_type.value) for d in detectors]
 
+    @mcp.tool
+    async def kuckuck_fetch_model(ctx: Context) -> str:
+        """Download the GLiNER model (~ 1.1 GB) into the local cache.
+
+        After this call, future ``kuckuck_pseudonymize`` invocations
+        with default ``ner=auto`` will detect personal names too,
+        not just emails / phones / handles. Without it the server
+        falls back to regex-only pseudonymization.
+
+        The download is gated behind a FastMCP elicitation: the user
+        must explicitly accept the disk-space and bandwidth cost
+        before anything is fetched. Cancelled or declined elicitations
+        return a short message; the server itself never starts a
+        download silently.
+
+        The download takes 5-15 minutes on a typical connection. The
+        server stays responsive on other tools while it runs, but the
+        client may show a long-running tool indicator.
+        """
+        if not is_gliner_installed():
+            raise ToolError(
+                "Cannot fetch the model because the optional 'gliner' package is not "
+                "installed. Fix: in a shell, run `pip install 'kuckuck[ner]'` and "
+                "restart the MCP client so this server picks up the new dependency."
+            )
+        if is_model_available():
+            return (
+                f"Model already present at {default_model_path()}. "
+                "kuckuck_pseudonymize with ner=auto or ner=true will use it."
+            )
+        consent = await ctx.elicit(
+            message=(
+                "kuckuck_fetch_model will download the GLiNER NER model "
+                f"(~ 1.1 GB) from the HuggingFace Hub into {default_model_path()}. "
+                "This is a one-time setup; afterwards Kuckuck can recognise "
+                "personal names locally without sending any data to a cloud LLM. "
+                "The download takes 5-15 minutes. Continue?"
+            ),
+            response_type=Literal["yes", "no"],
+        )
+        match consent:
+            case AcceptedElicitation(data="yes"):
+                pass
+            case AcceptedElicitation(data=other):
+                return f"cancelled: user explicitly answered {other!r}"
+            case DeclinedElicitation():
+                return "cancelled: user declined the download"
+            case CancelledElicitation():
+                return "cancelled: elicitation was cancelled"
+
+        try:
+            # Lazy: huggingface_hub is part of the [ner] extra, not the
+            # core install. By the time we get here is_gliner_installed()
+            # already returned True, so the import is safe.
+            # pylint: disable-next=import-outside-toplevel
+            from huggingface_hub import snapshot_download  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise ToolError(
+                "huggingface_hub is missing. Reinstall with `pip install 'kuckuck[ner]'` "
+                "to repair the install, then restart the MCP client."
+            ) from exc
+
+        target = default_cache_root() / DEFAULT_MODEL_ID.split("/")[-1]
+        target.mkdir(parents=True, exist_ok=True)
+        try:
+            snapshot_download(repo_id=DEFAULT_MODEL_ID, local_dir=str(target))
+        except (OSError, ValueError, RuntimeError) as exc:
+            # Same wide-net catch as the CLI (cmd_fetch_model): every HF
+            # error class inherits from one of these. Surface a short
+            # message rather than a stack trace.
+            raise ToolError(f"Failed to download '{DEFAULT_MODEL_ID}': {exc}") from exc
+        return (
+            f"ok: model downloaded to {target}. "
+            "kuckuck_pseudonymize with ner=auto will now include PERSON detection."
+        )
+
+    @mcp.prompt(
+        name="setup_kuckuck",
+        description=(
+            "First-time setup walkthrough. Calls kuckuck_status, then explains "
+            "in order what the user needs to do to reach 'best results' state "
+            "(key file present, gliner extra installed, model downloaded). "
+            "Use when the user just installed kuckuck-mcp and asks 'how do I "
+            "start?' or when kuckuck_status reports any problem."
+        ),
+        tags={"kuckuck", "setup", "guide"},
+    )
+    def setup_kuckuck() -> str:
+        """Quick-action prompt: walk a non-technical user through setup."""
+        return (
+            "Walk the user through getting Kuckuck to its 'best results' state. "
+            "Steps:\n\n"
+            "1. Call kuckuck_status. Read the 'problems' list - it tells you "
+            "exactly what is missing.\n"
+            "2. If 'master key' is in the problems: tell the user to run "
+            "`kuckuck init-key` once in any shell, then restart the MCP client. "
+            "Without a key, no pseudonymization can happen.\n"
+            "3. If 'gliner' is in the problems: tell the user to run "
+            "`pip install 'kuckuck[ner]'` and restart the MCP client. This unlocks "
+            "PERSON-name detection in addition to emails/phones/handles.\n"
+            "4. If 'model' is in the problems but gliner is installed: offer to "
+            "call kuckuck_fetch_model. Explain that this will download about "
+            "1.1 GB of model weights and take 5-15 minutes. The user must "
+            "accept a confirmation prompt before the download starts.\n"
+            "5. After every fix, call kuckuck_status again to confirm 'problems' "
+            "is empty. Stop when it is.\n\n"
+            "Do not run kuckuck_fetch_model without first explaining the cost "
+            "to the user - the elicitation prompt requires their explicit yes."
+        )
+
     @mcp.prompt(
         name="pseudonymize_before_reading",
         description=(
@@ -425,7 +541,12 @@ def build_server() -> FastMCP:
                 "Run: pip install 'kuckuck[ner]'"
             )
         if gliner_ok and not model_ok:
-            problems.append(f"NER model snapshot missing at {default_model_path()}. " "Run: kuckuck fetch-model")
+            problems.append(
+                f"NER model snapshot missing at {default_model_path()}. "
+                "Either run `kuckuck fetch-model` in a shell, or call the "
+                "kuckuck_fetch_model MCP tool from this server (it will ask "
+                "for confirmation before the ~ 1.1 GB download)."
+            )
 
         return StatusInfo(
             key_found=key_found,

@@ -368,6 +368,104 @@ class TestPseudonymizeWithRealNer:
             )
 
 
+class TestFetchModelTool:
+    """End-to-end coverage for the kuckuck_fetch_model tool.
+
+    The tool is the user-friendly entry point for the 1.1 GB model
+    download. It MUST be elicitation-gated (no silent multi-GB
+    downloads) and must early-exit when gliner isn't installed or the
+    model is already on disk - otherwise it would spin up a 1.1 GB
+    transfer for every model that makes a single status call wrong.
+    """
+
+    async def test_fetch_model_without_gliner_raises(
+        self, mcp_client: KuckuckClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kuckuck_mcp.server.is_gliner_installed", lambda: False)
+        with pytest.raises(ToolError, match="kuckuck\\[ner\\]"):
+            await mcp_client.call_tool("kuckuck_fetch_model")
+
+    async def test_fetch_model_already_present_short_circuits(
+        self, mcp_client: KuckuckClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kuckuck_mcp.server.is_gliner_installed", lambda: True)
+        monkeypatch.setattr("kuckuck_mcp.server.is_model_available", lambda: True)
+        result = await mcp_client.call_tool("kuckuck_fetch_model")
+        assert "already present" in result.data
+
+    async def test_fetch_model_user_declines_does_not_download(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Defence-in-depth: even if the model isn't on disk, a declined
+        # elicitation must NOT trigger snapshot_download. We patch the
+        # downloader to raise so a real call would crash the test.
+        monkeypatch.setattr("kuckuck_mcp.server.is_gliner_installed", lambda: True)
+        monkeypatch.setattr("kuckuck_mcp.server.is_model_available", lambda: False)
+        called = {"n": 0}
+
+        def fake_download(**_: object) -> None:
+            called["n"] += 1
+            raise AssertionError("snapshot_download must not be called on decline")
+
+        import sys as _sys
+        import types as _types
+
+        fake_mod = _types.ModuleType("huggingface_hub")
+        fake_mod.snapshot_download = fake_download  # type: ignore[attr-defined]
+        monkeypatch.setitem(_sys.modules, "huggingface_hub", fake_mod)
+
+        server = build_server()
+        async with Client(transport=server, elicitation_handler=_decline_handler) as client:
+            result = await client.call_tool("kuckuck_fetch_model")
+        assert "cancelled" in result.data
+        assert called["n"] == 0
+
+    async def test_fetch_model_user_accepts_invokes_snapshot_download(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # On 'yes' the tool calls snapshot_download with the default model
+        # id and writes into the cache root. We replace the real downloader
+        # with a stub so the test does not pull 1.1 GB.
+        monkeypatch.setattr("kuckuck_mcp.server.is_gliner_installed", lambda: True)
+        monkeypatch.setattr("kuckuck_mcp.server.is_model_available", lambda: False)
+        monkeypatch.setattr("kuckuck_mcp.server.default_cache_root", lambda: tmp_path)
+        calls: list[dict[str, str]] = []
+
+        def fake_download(repo_id: str, local_dir: str) -> str:
+            calls.append({"repo_id": repo_id, "local_dir": local_dir})
+            Path(local_dir).mkdir(parents=True, exist_ok=True)
+            return local_dir
+
+        import sys as _sys
+        import types as _types
+
+        fake_mod = _types.ModuleType("huggingface_hub")
+        fake_mod.snapshot_download = fake_download  # type: ignore[attr-defined]
+        monkeypatch.setitem(_sys.modules, "huggingface_hub", fake_mod)
+
+        server = build_server()
+        async with Client(transport=server, elicitation_handler=_accept_yes_handler) as client:
+            result = await client.call_tool("kuckuck_fetch_model")
+        assert "ok" in result.data
+        assert "model downloaded" in result.data
+        assert calls and calls[0]["repo_id"] == "urchade/gliner_multi-v2.1"
+
+
+class TestSetupPrompt:
+    async def test_setup_prompt_is_registered(self, mcp_client: KuckuckClient) -> None:
+        prompts = await mcp_client.list_prompts()
+        names = {p.name for p in prompts}
+        assert "setup_kuckuck" in names
+
+    async def test_setup_prompt_mentions_all_three_setup_steps(self, mcp_client: KuckuckClient) -> None:
+        result = await mcp_client.get_prompt("setup_kuckuck")
+        rendered = " ".join(str(m.content) for m in result.messages)
+        # The prompt must instruct the model on the three things a fresh
+        # install needs: key, gliner extra, model download.
+        assert "kuckuck_status" in rendered
+        assert "kuckuck init-key" in rendered
+        assert "kuckuck[ner]" in rendered
+        assert "kuckuck_fetch_model" in rendered
+
+
 class TestRestoreToolElicitation:
     @staticmethod
     def _setup_pseudonymized(tmp_path: Path) -> Path:
