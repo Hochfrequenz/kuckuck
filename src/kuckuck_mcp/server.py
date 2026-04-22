@@ -60,7 +60,6 @@ from kuckuck.options import RunOptions
 from kuckuck.pseudonymize import build_default_detectors, restore_text
 from kuckuck.runner import run_pseudonymize
 
-
 #: Env var that lists colon-separated allowed roots for file_path arguments.
 #: Default (when unset): only $PWD at server-start time is allowed. Setting
 #: this lets the operator widen the workspace explicitly, e.g.
@@ -286,10 +285,7 @@ def build_server() -> FastMCP:
             from kuckuck.detectors.ner import NerDetector  # pylint: disable=import-outside-toplevel
 
             detectors.append(NerDetector())
-        return [
-            DetectorInfo(name=d.name, priority=d.priority, entity_type=d.entity_type.value)
-            for d in detectors
-        ]
+        return [DetectorInfo(name=d.name, priority=d.priority, entity_type=d.entity_type.value) for d in detectors]
 
     @mcp.prompt(
         name="pseudonymize_before_reading",
@@ -414,10 +410,7 @@ def build_server() -> FastMCP:
                 "Run: pip install 'kuckuck[ner]'"
             )
         if gliner_ok and not model_ok:
-            problems.append(
-                f"NER model snapshot missing at {default_model_path()}. "
-                "Run: kuckuck fetch-model"
-            )
+            problems.append(f"NER model snapshot missing at {default_model_path()}. " "Run: kuckuck fetch-model")
 
         return StatusInfo(
             key_found=key_found,

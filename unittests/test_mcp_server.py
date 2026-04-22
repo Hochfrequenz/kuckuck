@@ -162,9 +162,7 @@ class TestPromptDiscoverability:
         }
         assert expected.issubset(names)
 
-    async def test_pseudonymize_prompt_renders_with_file_path(
-        self, mcp_client: KuckuckClient, tmp_path: Path
-    ) -> None:
+    async def test_pseudonymize_prompt_renders_with_file_path(self, mcp_client: KuckuckClient, tmp_path: Path) -> None:
         result = await mcp_client.get_prompt(
             "pseudonymize_before_reading",
             arguments={"file_path": str(tmp_path / "foo.eml")},
@@ -177,17 +175,13 @@ class TestPromptDiscoverability:
         assert "kuckuck_pseudonymize" in rendered
         assert "Step" in rendered
 
-    async def test_diagnose_prompt_references_status_tool(
-        self, mcp_client: KuckuckClient
-    ) -> None:
+    async def test_diagnose_prompt_references_status_tool(self, mcp_client: KuckuckClient) -> None:
         result = await mcp_client.get_prompt("diagnose_kuckuck_setup")
         rendered = " ".join(str(m.content) for m in result.messages)
         assert "kuckuck_status" in rendered
         assert "problems" in rendered
 
-    async def test_explain_prompt_covers_token_types(
-        self, mcp_client: KuckuckClient
-    ) -> None:
+    async def test_explain_prompt_covers_token_types(self, mcp_client: KuckuckClient) -> None:
         result = await mcp_client.get_prompt("explain_kuckuck_tokens")
         rendered = " ".join(str(m.content) for m in result.messages)
         # Must explain at least the four user-visible token prefixes.
@@ -198,14 +192,10 @@ class TestPromptDiscoverability:
 
 
 class TestPseudonymizeTool:
-    async def test_pseudonymize_returns_status_line(
-        self, mcp_client: KuckuckClient, tmp_path: Path
-    ) -> None:
+    async def test_pseudonymize_returns_status_line(self, mcp_client: KuckuckClient, tmp_path: Path) -> None:
         source = tmp_path / "doc.txt"
         source.write_text("Kontakt max@firma.de", encoding="utf-8")
-        result = await mcp_client.call_tool(
-            "kuckuck_pseudonymize", arguments={"file_path": str(source)}
-        )
+        result = await mcp_client.call_tool("kuckuck_pseudonymize", arguments={"file_path": str(source)})
         assert "ok" in result.data
         assert "1 replacements" in result.data
         # File got rewritten with tokens.
@@ -213,9 +203,7 @@ class TestPseudonymizeTool:
         # Sidecar was created.
         assert (tmp_path / "doc.txt.kuckuck-map.enc").is_file()
 
-    async def test_pseudonymize_dry_run_does_not_write(
-        self, mcp_client: KuckuckClient, tmp_path: Path
-    ) -> None:
+    async def test_pseudonymize_dry_run_does_not_write(self, mcp_client: KuckuckClient, tmp_path: Path) -> None:
         source = tmp_path / "doc.txt"
         original = "Kontakt max@firma.de"
         source.write_text(original, encoding="utf-8")
@@ -226,9 +214,7 @@ class TestPseudonymizeTool:
         assert "dry-run" in result.data
         assert source.read_text(encoding="utf-8") == original
 
-    async def test_pseudonymize_format_eml_keeps_headers(
-        self, mcp_client: KuckuckClient, tmp_path: Path
-    ) -> None:
+    async def test_pseudonymize_format_eml_keeps_headers(self, mcp_client: KuckuckClient, tmp_path: Path) -> None:
         source = tmp_path / "msg.eml"
         source.write_text(
             "From: a@example.com\nSubject: hi\n\nBody max@firma.de\n",
@@ -244,9 +230,7 @@ class TestPseudonymizeTool:
         # Headers stay intact (a@example.com is in the From header, not the body).
         assert "a@example.com" in out
 
-    async def test_pseudonymize_missing_file_raises_tool_error(
-        self, mcp_client: KuckuckClient, tmp_path: Path
-    ) -> None:
+    async def test_pseudonymize_missing_file_raises_tool_error(self, mcp_client: KuckuckClient, tmp_path: Path) -> None:
         with pytest.raises(ToolError, match="not a regular file"):
             await mcp_client.call_tool(
                 "kuckuck_pseudonymize",
@@ -308,9 +292,7 @@ class TestPseudonymizeWithRealNer:
     """
 
     @pytest.mark.ner
-    async def test_pseudonymize_with_ner_finds_person_in_eml(
-        self, mcp_client: KuckuckClient, tmp_path: Path
-    ) -> None:
+    async def test_pseudonymize_with_ner_finds_person_in_eml(self, mcp_client: KuckuckClient, tmp_path: Path) -> None:
         # Skip if the NER environment isn't ready - the marker filters
         # in CI but local runs without -m ner won't hit this path; we
         # add an explicit check so a stray local invocation gives a
@@ -400,9 +382,7 @@ class TestRestoreToolElicitation:
         assert "cancelled" in result.data
         assert "max@firma.de" not in result.data
 
-    async def test_restore_missing_sidecar_raises(
-        self, mcp_client: KuckuckClient, tmp_path: Path
-    ) -> None:
+    async def test_restore_missing_sidecar_raises(self, mcp_client: KuckuckClient, tmp_path: Path) -> None:
         source = tmp_path / "no-sidecar.txt"
         source.write_text("plain text", encoding="utf-8")
         with pytest.raises(ToolError, match="missing mapping sidecar"):
@@ -451,9 +431,7 @@ class TestStatusTool:
         # paths from KeyNotFoundError into the model context.
         assert "/" not in result.data.key_error
 
-    async def test_status_problems_empty_when_fully_operational(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_status_problems_empty_when_fully_operational(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Force gliner+model to look present so the problems list collapses
         # to []. This locks the contract "problems == [] iff fully usable".
         monkeypatch.setattr("kuckuck_mcp.server.is_gliner_installed", lambda: True)
