@@ -616,3 +616,45 @@ class TestListDetectorsWithNer:
         result = runner.invoke(app, ["list-detectors"])
         assert result.exit_code == 0
         assert "\nner " not in result.output and not result.output.startswith("ner ")
+
+
+class TestMcpSubcommand:
+    """The ``mcp`` subcommand group replaces the need for a separate kuckuck-mcp binary."""
+
+    def test_mcp_help_lists_serve(self) -> None:
+        result = runner.invoke(app, ["mcp", "--help"])
+        assert result.exit_code == 0
+        assert "serve" in result.output
+
+    def test_mcp_serve_help_does_not_require_mcp_extra(self) -> None:
+        # '--help' must work even in environments where fastmcp is absent:
+        # the import lives inside the command body, not at module load time.
+        result = runner.invoke(app, ["mcp", "serve", "--help"])
+        assert result.exit_code == 0
+        assert "FastMCP" in result.output or "MCP" in result.output
+
+    def test_mcp_serve_reports_missing_extra(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Simulate the [mcp] extra not being installed. We blacklist the
+        # kuckuck_mcp package from sys.modules so its re-import raises.
+        import sys as _sys  # pylint: disable=import-outside-toplevel
+
+        for name in list(_sys.modules):
+            if name == "kuckuck_mcp" or name.startswith("kuckuck_mcp."):
+                monkeypatch.delitem(_sys.modules, name, raising=False)
+        monkeypatch.setitem(_sys.modules, "kuckuck_mcp", None)
+        result = runner.invoke(app, ["mcp", "serve"])
+        assert result.exit_code != 0
+        assert "pip install 'kuckuck[mcp]'" in result.output
+
+    def test_mcp_serve_delegates_to_server_main(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        called = {"n": 0}
+
+        def fake_main() -> None:
+            called["n"] += 1
+
+        import kuckuck_mcp.server as _server  # pylint: disable=import-outside-toplevel
+
+        monkeypatch.setattr(_server, "main", fake_main)
+        result = runner.invoke(app, ["mcp", "serve"])
+        assert result.exit_code == 0, result.output
+        assert called["n"] == 1
