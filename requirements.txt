@@ -51,7 +51,7 @@ oletools==0.60.2
     #   rtfde
 pcodedmp==1.2.6
     # via oletools
-phonenumbers==9.0.28
+phonenumbers==9.0.29
     # via kuckuck (pyproject.toml)
 pyahocorasick==2.3.0
     # via kuckuck (pyproject.toml)
