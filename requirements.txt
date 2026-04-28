@@ -28,7 +28,7 @@ email-validator==2.3.0
     # via kuckuck (pyproject.toml)
 extract-msg==0.55.0
     # via kuckuck (pyproject.toml)
-idna==3.12
+idna==3.13
     # via email-validator
 lark==1.3.1
     # via rtfde
@@ -51,9 +51,9 @@ oletools==0.60.2
     #   rtfde
 pcodedmp==1.2.6
     # via oletools
-phonenumbers==9.0.28
+phonenumbers==9.0.29
     # via kuckuck (pyproject.toml)
-pyahocorasick==2.3.0
+pyahocorasick==2.3.1
     # via kuckuck (pyproject.toml)
 pycparser==3.0
     # via cffi
