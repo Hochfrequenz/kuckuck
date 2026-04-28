@@ -41,7 +41,7 @@ jobs:
           python-version: "3.12"
       - name: Restore GLiNER model cache
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/kuckuck/models
           key: gliner-multi-v2.1
