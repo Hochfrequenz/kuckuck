@@ -53,7 +53,7 @@ pcodedmp==1.2.6
     # via oletools
 phonenumbers==9.0.29
     # via kuckuck (pyproject.toml)
-pyahocorasick==2.3.0
+pyahocorasick==2.3.1
     # via kuckuck (pyproject.toml)
 pycparser==3.0
     # via cffi
