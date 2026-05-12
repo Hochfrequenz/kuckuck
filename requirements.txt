@@ -22,7 +22,7 @@ dnspython==2.8.0
     # via email-validator
 easygui==0.98.3
     # via oletools
-ebcdic==1.1.1
+ebcdic==2.0.1
     # via extract-msg
 email-validator==2.3.0
     # via kuckuck (pyproject.toml)
