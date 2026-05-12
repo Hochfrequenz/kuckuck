@@ -84,7 +84,7 @@ packaging = [
     "twine==6.2.0"
 ]
 build_executable = [
-    "pyinstaller==6.19.0"
+    "pyinstaller==6.20.0"
 ]
 dev = [
     "pip-tools"
