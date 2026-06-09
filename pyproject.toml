@@ -56,7 +56,7 @@ ner = [
 tests = [
     "pytest==9.0.3",
     "pytest-asyncio==1.3.0",
-    "syrupy==5.2.0",
+    "syrupy==5.3.1",
     "hypothesis==6.155.1"
 ]
 mcp = [
