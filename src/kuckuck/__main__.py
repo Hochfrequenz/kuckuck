@@ -28,6 +28,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 from cryptography.exceptions import InvalidTag
@@ -611,12 +612,16 @@ def cmd_mcp_proxy(  # pylint: disable=too-many-arguments,too-many-positional-arg
         typer.echo(str(exc), err=True)
         raise typer.Exit(EXIT_KEY_NOT_FOUND) from exc
 
-    target: object
+    # The backend create_proxy connects to: either a parsed MCPConfig object
+    # (--config, an "mcpServers" dict) or a single URL / server-path string
+    # (--backend). Exactly one is set, enforced above.
+    target: str | dict[str, Any]
     if config is not None:
         import json  # pylint: disable=import-outside-toplevel
 
         target = json.loads(config.read_text(encoding="utf-8"))
     else:
+        assert backend is not None  # guaranteed by the exactly-one check above
         target = backend
 
     denylist_terms = None
