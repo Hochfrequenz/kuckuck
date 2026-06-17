@@ -30,6 +30,7 @@ try:
     from fastmcp.client.transports import FastMCPTransport
     from fastmcp.tools import ToolResult
 
+    from kuckuck.detectors.ner import is_gliner_installed, is_model_available
     from kuckuck.mapping import Mapping
     from kuckuck.pseudonymize import build_default_detectors
     from kuckuck_mcp.middleware import KuckuckMiddleware
@@ -127,6 +128,8 @@ async def test_person_name_pseudonymized_through_proxy_with_gliner() -> None:
     ~1.1 GB model), not the default suite. Covers the regex-only proxy tests'
     blind spot: a bare name with no email/phone/handle.
     """
+    if not is_gliner_installed() or not is_model_available():
+        pytest.skip("gliner / model not present")
     backend, _ = _make_backend()
 
     @backend.tool
