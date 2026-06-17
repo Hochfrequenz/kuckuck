@@ -25,7 +25,7 @@ data, and rewriting them would break the schema the model relies on.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypeVar
 
 from pydantic import SecretStr
 
@@ -33,29 +33,48 @@ from kuckuck.detectors.base import Detector
 from kuckuck.mapping import Mapping
 from kuckuck.pseudonymize import pseudonymize_text, restore_text
 
+# Both transforms are structure-preserving: a str maps to a str, a dict to a
+# dict with the same keys, a list to a list, and any other scalar to itself.
+# The public functions are therefore generic in the value type; the recursive
+# work is delegated to Any-typed helpers (mypy cannot prove the per-branch
+# reconstruction stays T, but the runtime contract holds).
+T = TypeVar("T")
+
 
 def pseudonymize_value(
+    value: T,
+    *,
+    master: SecretStr,
+    mapping: Mapping,
+    detectors: list[Detector],
+) -> T:
+    """Return *value* with every PII string leaf replaced by a Kuckuck token.
+
+    Structure-preserving: the result has the same type as *value* (a ``str``
+    stays a ``str``, a ``dict`` keeps its keys, etc.). Recurses into dicts and
+    lists. *mapping* is updated in place with every new allocation so callers
+    can persist it after the walk. The same *mapping* shared across calls keeps
+    token IDs stable (HMAC-deterministic).
+    """
+    return _pseudonymize_value(value, master=master, mapping=mapping, detectors=detectors)
+
+
+def _pseudonymize_value(
     value: Any,
     *,
     master: SecretStr,
     mapping: Mapping,
     detectors: list[Detector],
 ) -> Any:
-    """Return *value* with every PII string leaf replaced by a Kuckuck token.
-
-    Recurses into dicts and lists. *mapping* is updated in place with every
-    new allocation so callers can persist it after the walk. The same
-    *mapping* shared across calls keeps token IDs stable (HMAC-deterministic).
-    """
     if isinstance(value, str):
         return pseudonymize_text(value, master, detectors, mapping=mapping).text
     if isinstance(value, dict):
         return {
-            key: pseudonymize_value(item, master=master, mapping=mapping, detectors=detectors)
+            key: _pseudonymize_value(item, master=master, mapping=mapping, detectors=detectors)
             for key, item in value.items()
         }
     if isinstance(value, list):
-        return [pseudonymize_value(item, master=master, mapping=mapping, detectors=detectors) for item in value]
+        return [_pseudonymize_value(item, master=master, mapping=mapping, detectors=detectors) for item in value]
     # Numbers, bools, None and any other scalar carry no detectable PII.
     return value
 

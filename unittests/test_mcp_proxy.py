@@ -18,6 +18,7 @@ Skipped when ``fastmcp`` is not importable (the ``[mcp]`` optional extra).
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import pytest
 from pydantic import AnyUrl, BaseModel, EmailStr, SecretStr
@@ -270,7 +271,7 @@ def test_transform_round_trip_over_nested_structure() -> None:
     """pseudonymize_value / restore_value recurse through dicts, lists and scalars."""
     mapping = Mapping()
     detectors = build_default_detectors(use_ner=False)
-    original = {
+    original: dict[str, Any] = {
         "contacts": [_REAL_EMAIL, {"alt": _REAL_EMAIL}],
         "count": 2,
         "active": True,
