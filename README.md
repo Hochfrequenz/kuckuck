@@ -382,10 +382,14 @@ Im MCP-Client trägst du dann **den Proxy** statt des Original-Servers ein (`com
 
 Zwei Richtungen:
 
-- **Antwort (Backend -> Modell):** PII in Tool-Ergebnissen wird zu Token (`[[EMAIL_...]]`, `[[PERSON_...]]`, ...), bevor das Modell sie sieht.
+- **Antwort (Backend -> Modell):** PII in Tool-Ergebnissen **und in Resource-Inhalten** wird zu Token (`[[EMAIL_...]]`, `[[PERSON_...]]`, ...), bevor das Modell sie sieht.
   Das ist die Kern-Garantie - im Modell-Kontext landet kein Klartext.
+  (Resources sind wichtig, weil Jira-/Confluence-MCP-Server ihre Inhalte oft als Resource statt als Tool-Result ausliefern.)
 - **Anfrage (Modell -> Backend):** Nur mit `--trusted` werden Token, die das Modell in Tool-Argumenten mitschickt, vor dem Weiterreichen wieder zu echtem Klartext aufgelöst.
   Damit kann das Modell auf echten Datensätzen *handeln* (ein Jira-Kommentar schreiben, einen Datensatz aktualisieren), ohne die PII je gesehen zu haben.
+
+Prompts (`on_get_prompt`) werden bewusst **nicht** pseudonymisiert - ein Prompt-Template ist autoren-kontrolliert und trägt erwartungsgemäß kein Kunden-PII.
+Binär-Inhalte (Bild/Audio/Blob) haben keinen erkennbaren Text.
 
 > **`--trusted` schickt echtes PII an das Backend.**
 > Setze es nur für lokale / vertrauenswürdige Server - niemals für ein Backend, das selbst wieder in eine Cloud schreibt.
