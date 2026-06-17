@@ -18,9 +18,15 @@ Both reuse the shared :class:`~kuckuck.mapping.Mapping`, so a token allocated
 for one tool result resolves to the same value when the model later passes it
 as an argument, and across the file-based CLI workflow too.
 
-Only string leaves are touched; numbers, booleans and ``None`` pass through
-unchanged. Dict keys are left as-is - they are structural field names, not
-data, and rewriting them would break the schema the model relies on.
+Only string *values* are touched; numbers, booleans and ``None`` pass through
+unchanged.
+
+A-priori assumption: **dict keys are never PII.** Keys are treated as
+structural field names (an MCP tool/result schema), so they are left as-is in
+both directions - pseudonymizing a key would change the schema the model and
+the backend rely on. This holds for MCP payloads, whose keys are
+schema-defined field names; if a backend ever used a person's name *as a dict
+key*, that key would not be tokenized.
 """
 
 from __future__ import annotations
@@ -69,6 +75,7 @@ def _pseudonymize_value(
     if isinstance(value, str):
         return pseudonymize_text(value, master, detectors, mapping=mapping).text
     if isinstance(value, dict):
+        # Keys are schema field names, assumed never PII - only values recurse.
         return {
             key: _pseudonymize_value(item, master=master, mapping=mapping, detectors=detectors)
             for key, item in value.items()
@@ -94,6 +101,7 @@ def _restore_value(value: Any, mapping: Mapping) -> Any:
     if isinstance(value, str):
         return restore_text(value, mapping)
     if isinstance(value, dict):
+        # Keys are schema field names, assumed never PII - only values recurse.
         return {key: _restore_value(item, mapping) for key, item in value.items()}
     if isinstance(value, list):
         return [_restore_value(item, mapping) for item in value]
