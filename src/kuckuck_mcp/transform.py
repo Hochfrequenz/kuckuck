@@ -79,17 +79,22 @@ def _pseudonymize_value(
     return value
 
 
-def restore_value(value: Any, mapping: Mapping) -> Any:
+def restore_value(value: T, mapping: Mapping) -> T:
     """Return *value* with every known Kuckuck token replaced by its original.
 
-    The inverse of :func:`pseudonymize_value`. Unknown tokens are left intact
-    (see :func:`kuckuck.pseudonymize.restore_text`), so a stray token never
-    raises - it just forwards literally.
+    Structure-preserving inverse of :func:`pseudonymize_value`: the result has
+    the same type as *value*. Unknown tokens are left intact (see
+    :func:`kuckuck.pseudonymize.restore_text`), so a stray token never raises -
+    it just forwards literally.
     """
+    return _restore_value(value, mapping)
+
+
+def _restore_value(value: Any, mapping: Mapping) -> Any:
     if isinstance(value, str):
         return restore_text(value, mapping)
     if isinstance(value, dict):
-        return {key: restore_value(item, mapping) for key, item in value.items()}
+        return {key: _restore_value(item, mapping) for key, item in value.items()}
     if isinstance(value, list):
-        return [restore_value(item, mapping) for item in value]
+        return [_restore_value(item, mapping) for item in value]
     return value
