@@ -624,7 +624,7 @@ def cmd_mcp_proxy(  # pylint: disable=too-many-arguments,too-many-positional-arg
         assert backend is not None  # guaranteed by the exactly-one check above
         target = backend
 
-    denylist_terms = None
+    denylist_terms: list[str] | None = None
     if denylist is not None:
         denylist_terms = [line.strip() for line in denylist.read_text(encoding="utf-8").splitlines() if line.strip()]
 
