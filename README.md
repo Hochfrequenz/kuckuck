@@ -370,6 +370,30 @@ Der MCP-Server oben pseudonymisiert *Dateien*.
 Wenn du dagegen einen **anderen** MCP-Server benutzt, der selbst personenbezogene Daten zurückgibt - z. B. ein Jira-MCP oder ein hausinterner Server, der eine Kunden-REST-API kapselt - dann willst du diese Daten pseudonymisieren, **bevor** sie überhaupt beim LLM ankommen.
 Genau das macht der MCP-Proxy: er legt sich als Wrapper vor den fremden Server und schreibt jede Tool-Antwort um.
 
+```mermaid
+sequenceDiagram
+    actor LLM as LLM-Client<br/>(Claude, ...)
+    participant Proxy as Kuckuck-Proxy<br/>(Middleware)
+    participant Map as Mapping-Sidecar<br/>(verschlüsselt)
+    participant MCP as Fremder MCP-Server<br/>(Jira, Kunden-API)
+
+    Note over LLM,MCP: Antwort: Backend -> Modell (immer pseudonymisiert)
+    LLM->>Proxy: tools/call get_customer
+    Proxy->>MCP: unveränderte Anfrage weiterleiten
+    MCP-->>Proxy: { email: "max@firma.de" }
+    Proxy->>Map: Original speichern, Token vergeben
+    Proxy-->>LLM: { email: "[[EMAIL_a7f3]]" }
+
+    Note over LLM,MCP: Anfrage: Modell -> Backend (Restore nur mit --trusted)
+    LLM->>Proxy: tools/call notify(to: "[[EMAIL_a7f3]]")
+    Proxy->>Map: Token -> Original (nur trusted backend)
+    Proxy->>MCP: notify(to: "max@firma.de")
+    MCP-->>Proxy: ok
+    Proxy-->>LLM: ok (Antwort wieder pseudonymisiert)
+```
+
+Der Master-Key und der Mapping-Sidecar bleiben lokal - im Modell-Kontext landen nur Token.
+
 ```bash
 # einen einzelnen Backend-Server (HTTP/SSE-URL oder lokales Server-Script) wrappen
 kuckuck mcp proxy --backend https://jira.example/mcp --sidecar ./team.kuckuck-map.enc
