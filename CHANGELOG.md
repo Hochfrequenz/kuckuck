@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pseudonymizing MCP proxy** (`kuckuck mcp proxy`).
+  A FastMCP proxy (`fastmcp.server.create_proxy`) that wraps another MCP server (Jira, a REST-API-backed customer-data server, ...) and rewrites every payload that crosses it via a `KuckuckMiddleware`:
+  tool results are pseudonymized before they reach the model (PII never enters the model context), and - for a backend marked `--trusted` - Kuckuck tokens the model sends as tool arguments are restored to their real values before the backend receives them, so the model can act on real entities without ever seeing the PII.
+  Fail-closed by default: a pseudonymization failure blocks the call (escape hatch `KUCKUCK_PROXY_FAIL_OPEN=1` / `--fail-open`, documented UNSAFE).
+  The token mapping is shared with the file-based CLI via the encrypted `--sidecar`, so token IDs stay stable across the proxy, restarts, and `kuckuck restore`.
+  Backends are passed as an HTTP/SSE URL or local server path (`--backend`) or an MCPConfig JSON file (`--config`).
+  New modules `src/kuckuck_mcp/{transform,middleware,proxy}.py`; ships in the existing `kuckuck[mcp]` extra (no separate package).
+  v1 wraps a single backend with one trust setting; per-backend trust across a multi-server config is a documented follow-up.
 - **`kuckuck mcp serve` subcommand** delegating to the FastMCP server.
   The standalone `kuckuck-mcp` console script still works (pip-install backward compatibility); `kuckuck mcp serve` is the recommended invocation for new installs and the single-binary release.
 - **Claude Code PreToolUse hook** (Issue [#9](https://github.com/Hochfrequenz/kuckuck/issues/9)).

@@ -364,6 +364,38 @@ pip install "kuckuck[mcp]"
 Setup-Anleitungen für Claude Code, opencode und Claude Desktop: siehe [`integrations/mcp/README.md`](integrations/mcp/README.md).
 Beispiel-Configs liegen daneben.
 
+### MCP-Proxy (PII aus fremden MCP-Servern pseudonymisieren)
+
+Der MCP-Server oben pseudonymisiert *Dateien*.
+Wenn du dagegen einen **anderen** MCP-Server benutzt, der selbst personenbezogene Daten zurückgibt - z. B. ein Jira-MCP oder ein hausinterner Server, der eine Kunden-REST-API kapselt - dann willst du diese Daten pseudonymisieren, **bevor** sie überhaupt beim LLM ankommen.
+Genau das macht der MCP-Proxy: er legt sich als Wrapper vor den fremden Server und schreibt jede Tool-Antwort um.
+
+```bash
+# einen einzelnen Backend-Server (HTTP/SSE-URL oder lokales Server-Script) wrappen
+kuckuck mcp proxy --backend https://jira.example/mcp --sidecar ./team.kuckuck-map.enc
+
+# stdio- oder Multi-Server-Backends via MCPConfig-JSON (mcpServers-Objekt)
+kuckuck mcp proxy --config ./backend.mcp.json --sidecar ./team.kuckuck-map.enc
+```
+
+Im MCP-Client trägst du dann **den Proxy** statt des Original-Servers ein (`command: "kuckuck", args: ["mcp", "proxy", "--backend", "..."]`).
+
+Zwei Richtungen:
+
+- **Antwort (Backend -> Modell):** PII in Tool-Ergebnissen wird zu Token (`[[EMAIL_...]]`, `[[PERSON_...]]`, ...), bevor das Modell sie sieht.
+  Das ist die Kern-Garantie - im Modell-Kontext landet kein Klartext.
+- **Anfrage (Modell -> Backend):** Nur mit `--trusted` werden Token, die das Modell in Tool-Argumenten mitschickt, vor dem Weiterreichen wieder zu echtem Klartext aufgelöst.
+  Damit kann das Modell auf echten Datensätzen *handeln* (ein Jira-Kommentar schreiben, einen Datensatz aktualisieren), ohne die PII je gesehen zu haben.
+
+> **`--trusted` schickt echtes PII an das Backend.**
+> Setze es nur für lokale / vertrauenswürdige Server - niemals für ein Backend, das selbst wieder in eine Cloud schreibt.
+> Ohne `--trusted` bekommt das Backend das Token wörtlich, nicht den Klartext.
+
+Default ist **fail-closed**: scheitert die Pseudonymisierung einer Antwort, wird der Tool-Call blockiert statt Klartext durchzulassen (Notausgang `KUCKUCK_PROXY_FAIL_OPEN=1` bzw. `--fail-open`, dokumentiert UNSICHER).
+Das Token-Mapping teilt sich der Proxy über den verschlüsselten `--sidecar` mit dem datei-basierten CLI - dieselben Token, stabil über Neustarts und kompatibel mit `kuckuck restore`.
+
+Stand heute wrappt der Proxy einen einzelnen Backend-Server mit einer Trust-Einstellung; per-Backend-Trust über eine Multi-Server-Config ist ein Folge-Issue.
+
 ### Claude-Code-PreToolUse-Hook
 
 Zusätzlich zum MCP-Server kann Claude Code einen PreToolUse-Hook aufrufen, der `Read`, `Edit` und `Grep` auf `*.eml`/`*.msg`-Dateien abfängt und sie vorher durch Kuckuck schickt.
