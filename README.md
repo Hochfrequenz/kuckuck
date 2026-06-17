@@ -9,36 +9,30 @@
 ![Build Executable status badge](https://github.com/Hochfrequenz/kuckuck/workflows/Build%20Executable/badge.svg)
 ![PyPi Status Badge](https://img.shields.io/pypi/v/kuckuck)
 
-Lokale Pseudonymisierung personenbezogener Daten in Textdateien, **bevor** du sie an Cloud-LLMs gibst.
+Lokale Pseudonymisierung personenbezogener Daten, **bevor** sie an Cloud-LLMs gehen - als Proxy vor anderen MCP-Servern, als MCP-Server und als CLI/Library.
 
 ## Wie funktioniert das?
 
-```mermaid
-sequenceDiagram
-    actor User
-    participant Kuckuck
-    participant Mapping as Mapping-Sidecar<br/>(verschlüsselt)
-    participant LLM as Cloud-LLM<br/>(Claude, GPT, ...)
+Kuckuck erkennt personenbezogene Daten (E-Mail-Adressen, Telefonnummern, Jira-/Confluence-Handles, optional Personennamen), ersetzt sie durch deterministische Token (`[[EMAIL_a7f3b2c1]]`) und legt die Zuordnung in einem lokalen, AES-GCM-verschlüsselten Mapping ab.
+Das LLM sieht nur die Token; mit dem Master-Key führst du sie lokal wieder auf die Originale zurück.
+Derselbe Wert bekommt - über Dokumente, Tool-Calls und Teammitglieder mit gleichem Key hinweg - immer denselben Token.
 
-    User->>Kuckuck: brief.eml (mit max@firma.de, Anna)
-    Kuckuck->>Mapping: speichert Originale,<br/>vergibt Token
-    Kuckuck-->>User: brief.eml mit [[EMAIL_...]], [[PERSON_...]]
-    User->>LLM: pseudonymisierten Text
-    LLM-->>User: Antwort mit den gleichen Token
-    User->>Kuckuck: restore brief.eml
-    Kuckuck->>Mapping: liest Originale
-    Kuckuck-->>User: Antwort mit echten Namen
-```
+Der Master-Key bleibt lokal, das Mapping ist ohne ihn kryptographisch unlesbar - siehe Abschnitt "Umkehrbarkeit".
 
-Der Master-Key bleibt lokal, der Mapping-Sidecar (`*.kuckuck-map.enc`) ist AES-GCM-verschlüsselt.
-Ohne Key keine Rückführung — siehe Abschnitt "Umkehrbarkeit".
+### Drei Wege, Kuckuck zu benutzen
+
+| Modus | Wofür | Einstieg |
+|---|---|---|
+| **MCP-Proxy** | Du nutzt einen fremden MCP-Server (Jira, ein Server vor einer Kunden-REST-API), der selbst PII zurückgibt, und willst sie pseudonymisieren, *bevor* sie das LLM erreichen | [MCP-Proxy](#mcp-proxy-pii-aus-fremden-mcp-servern-pseudonymisieren) |
+| **MCP-Server** | Dein Coding-Assistent soll Dateien aktiv über native MCP-Tools (`kuckuck_pseudonymize`) pseudonymisieren | [MCP-Server](#mcp-server-empfohlen) |
+| **CLI & Library** | Du pseudonymisierst Dateien oder Text direkt - im Terminal oder aus Python | [Dateien & Text](#dateien-und-text-pseudonymisieren-cli) |
 
 Was Kuckuck **ist**:
 
-- Ein lokales CLI- und Library-Tool in Python.
+- Ein lokales Tool - MCP-Proxy, MCP-Server, CLI und Python-Library.
 Keine Cloud, keine Telemetrie.
-- Ein einfacher Weg, E-Mails, Jira-Tickets und Confluence-Exporte pseudonymisieren zu lassen, bevor du sie an Claude, ChatGPT oder ein anderes Cloud-LLM gibst.
-- Deterministisch: derselbe Name bekommt - über Dokumente und zwischen Teammitgliedern mit gleichem Key - denselben Token.
+- Ein einfacher Weg, personenbezogene Daten aus E-Mails, Tickets, Wiki-Exporten und fremden MCP-Servern zu pseudonymisieren, bevor du sie an Claude, ChatGPT oder ein anderes Cloud-LLM gibst.
+- Deterministisch: derselbe Wert bekommt - über Dokumente und zwischen Teammitgliedern mit gleichem Key - denselben Token.
 
 Was Kuckuck **nicht ist**:
 
@@ -92,20 +86,8 @@ Behandle den pseudonymisierten Output deshalb weiterhin als personenbezogenes Da
 | Denylist-Einträge | Kunden-/Projektnamen aus einer Datei |
 | Personen-Namen | Optional via [GLiNER](https://github.com/urchade/GLiNER) (`urchade/gliner_multi-v2.1`), Opt-in per `--ner` |
 
-Die Regex-Detektoren decken die häufigsten Datenquellen (Mail-Signaturen, Jira-Reporter, Confluence-Mentions) ohne ML ab.
+Die Regex-Detektoren decken die häufigsten Datenquellen (Mail-Signaturen, Jira-Reporter, Confluence-Mentions, API-Felder) ohne ML ab.
 Klarnamen ohne Handle werden erst beim Opt-in zum NER-Detektor erfasst.
-
-### Unterstützte Eingabeformate
-
-Kuckuck wählt das passende Format automatisch über die Datei-Endung; `--format` setzt es explizit.
-
-| Format | Endung | Was passiert |
-|---|---|---|
-| Plain Text | beliebig (`.txt`, kein Match) | Ganzer Inhalt geht durch die Detektoren - Default |
-| E-Mail | `.eml` | Header bleiben unangetastet, nur der Body wird verarbeitet; deutsche Signatur-Trigger und Quoted-Replies werden separat bearbeitet |
-| Outlook | `.msg` | Body wird extrahiert (Reihenfolge: HTML > RTF > Plain), Anhänge bleiben aussen vor (Warnung) |
-| Markdown | `.md` / `.markdown` | YAML-Frontmatter, Code-Blocks und Inline-Code werden nicht angefasst; Prosa, Listen, Footnotes und Reference-Links schon |
-| XML | `.xml` / `.html` | Text-Knoten und Attribut-Werte gehen durch die Detektoren; Tag-Struktur, Namespaces und CDATA bleiben erhalten |
 
 ## Installation
 
@@ -118,6 +100,9 @@ pip install kuckuck
 # Zusätzlich die CLI installieren
 pip install "kuckuck[cli]"
 
+# MCP-Server und MCP-Proxy
+pip install "kuckuck[mcp]"
+
 # CLI plus optionaler GLiNER-Personen-Detektor (zieht torch + gliner)
 pip install "kuckuck[cli,ner]"
 ```
@@ -125,14 +110,14 @@ pip install "kuckuck[cli,ner]"
 ### Als Standalone-Binary
 
 Lade dir die plattformspezifische Binary von der [Releases-Seite](https://github.com/Hochfrequenz/kuckuck/releases/latest).
-**Ein Binary pro Plattform** - es enthält CLI, MCP-Server und PERSON-Namen-Erkennung (NER) in einem:
+**Ein Binary pro Plattform** - es enthält CLI, MCP-Server, MCP-Proxy und PERSON-Namen-Erkennung (NER) in einem:
 
 | Plattform | Dateiname | Größe |
 |---|---|---|
 | Windows | `kuckuck_windows_<ver>.exe` | ~ 300 MB |
 | macOS Apple Silicon | `kuckuck_macos_arm64_<ver>` | ~ 300 MB |
 
-Das Binary startest du als CLI mit `kuckuck <file>` und als MCP-Server mit `kuckuck mcp serve` - MCP-Clients (Claude Code, opencode, Claude Desktop) bekommen in der Config `command: "kuckuck", args: ["mcp", "serve"]`.
+Das Binary startest du als CLI mit `kuckuck <file>`, als MCP-Server mit `kuckuck mcp serve` und als MCP-Proxy mit `kuckuck mcp proxy` - MCP-Clients (Claude Code, opencode, Claude Desktop) bekommen in der Config `command: "kuckuck", args: ["mcp", "serve"]`.
 Siehe [`integrations/mcp/README.md`](integrations/mcp/README.md) für die Setup-Anleitung pro Client.
 Das NER-Modell selbst (~ 1.1 GB) wird einmalig via `kuckuck fetch-model` oder das `kuckuck_fetch_model` MCP-Tool nachgeladen.
 
@@ -184,191 +169,22 @@ Füge diese Zeilen in deine `.gitignore` ein:
 
 `*.kuckuck-map.enc` ist zwar AES-GCM-verschlüsselt, ein Commit ins Repo würde aber den Blast-Radius eines versehentlich geleakten Keys massiv vergrößern - besser gar nicht erst committen.
 
-## CLI-Nutzung
+## Mit MCP-Clients und Coding-Assistenten benutzen
 
-**Einfachster Fall - Datei direkt ersetzen:**
-
-```bash
-kuckuck brief.txt
-# -> brief.txt enthält jetzt [[EMAIL_a7f3b2c1]] statt max@firma.de
-# -> brief.txt.kuckuck-map.enc liegt daneben (verschlüsseltes Mapping)
-```
-
-**Rückführung nach LLM-Roundtrip:**
-
-```bash
-kuckuck restore brief.txt
-# -> brief.txt ist wieder original
-```
-
-**Batch-Verarbeitung:**
-
-```bash
-kuckuck docs/*.md
-```
-
-**Ohne Überschreiben (Original bleibt):**
-
-```bash
-kuckuck brief.txt --output-dir out/
-```
-
-**Vorschau (nichts schreiben):**
-
-```bash
-kuckuck brief.txt --dry-run
-```
-
-**Mit Denylist für Kunden-/Projektnamen:**
-
-```bash
-# denylist.txt - eine Zeile pro Eintrag, # sind Kommentare
-echo "Kunde Alpha GmbH" >> denylist.txt
-echo "Projekt Zugspitze" >> denylist.txt
-
-kuckuck brief.txt --denylist denylist.txt
-```
-
-**Format-aware Verarbeitung (E-Mail, Markdown, XML):**
-
-```bash
-# Auto-Detection per Endung
-kuckuck mail.eml          # Header bleiben, Body wird pseudonymisiert
-kuckuck notiz.md          # Code-Blocks und Inline-Code bleiben unangetastet
-kuckuck export.xml        # Tag-Struktur bleibt, Text und Attribute gehen durch
-
-# Explizit setzen, wenn die Endung nicht passt
-kuckuck irgendwas --format eml
-kuckuck doc.txt --format md
-```
-
-Format-Auto-Detection: `.eml -> eml`, `.msg -> msg`, `.md`/`.markdown -> md`, `.xml`/`.html -> xml`, alles andere -> `text`.
-
-**Sequenzielle Tokens statt HMAC (kürzer im Output, aber nicht cross-doc-stabil):**
-
-```bash
-kuckuck brief.txt --sequential-tokens
-# -> [[EMAIL_1]], [[EMAIL_2]], ... pro Dokument
-```
-
-**Mit NER-Detektor für Personennamen:**
-
-```bash
-# einmalig: Modell laden (ca. 1.1 GB ins ~/.cache/kuckuck/models/)
-pip install "kuckuck[ner]"
-kuckuck fetch-model
-
-# danach beliebig oft - vollständig offline
-kuckuck brief.txt --ner
-# -> "Max Mustermann" wird zu [[PERSON_a7f3b2c1]]
-```
-
-Der NER-Detektor läuft erst, wenn er mit `--ner` aktiviert wird, damit die Default-Pipeline kein torch laden muss.
-Ohne installiertes `kuckuck[ner]`-Extra oder ohne lokales Modell beendet sich `kuckuck --ner` mit Exit-Code 7 und einem Hinweis.
-
-**Mapping inspizieren (für Debugging, gibt Klartext aus):**
-
-```bash
-kuckuck inspect brief.txt.kuckuck-map.enc
-```
-
-**Alle Subkommandos:**
-
-```
-kuckuck <file>...          Pseudonymisieren (Default)
-kuckuck run <file>...      Explizit (identisch zur Default-Form), nimmt --ner
-kuckuck restore <file>...  Mapping anwenden, Original wiederherstellen
-kuckuck init-key           Neuen Master-Key generieren
-kuckuck fetch-model        GLiNER-Modell laden (nur mit kuckuck[ner])
-kuckuck inspect <map>      Verschlüsseltes Mapping als Klartext dumpen
-kuckuck list-detectors     Alle registrierten Detektoren zeigen
-kuckuck version            Version ausgeben
-```
-
-## Binary-Nutzung
-
-Die Binaries verhalten sich identisch zur pip-installierten CLI.
-Beispiel Windows PowerShell:
-
-```powershell
-.\kuckuck_windows.exe init-key
-.\kuckuck_windows.exe brief.txt
-.\kuckuck_windows.exe restore brief.txt
-```
-
-Beispiel macOS:
-
-```bash
-./kuckuck_macos_arm64 init-key
-./kuckuck_macos_arm64 brief.txt
-./kuckuck_macos_arm64 restore brief.txt
-```
-
-## Library-Nutzung
-
-```python
-from pathlib import Path
-from kuckuck import (
-    Mapping,
-    build_default_detectors,
-    load_default_key,
-    load_mapping,
-    pseudonymize_text,
-    restore_text,
-    save_mapping,
-)
-
-key = load_default_key()
-detectors = build_default_detectors(denylist=["Kunde Alpha GmbH"])
-
-source = Path("brief.eml")
-text = source.read_text(encoding="utf-8")
-
-# Bei vorhandenem Mapping merge-reload, sonst leer starten
-map_path = source.with_suffix(source.suffix + ".kuckuck-map.enc")
-mapping = load_mapping(key, map_path) if map_path.is_file() else Mapping()
-
-result = pseudonymize_text(text, key, detectors, mapping=mapping)
-source.write_text(result.text, encoding="utf-8")
-save_mapping(key, result.mapping, map_path)
-
-# Später: restore
-restored = restore_text(source.read_text(encoding="utf-8"), result.mapping)
-```
-
-## Integration mit KI-Assistenten
-
-Wenn du Claude Code, Cursor, GitHub Copilot, Codex oder ähnliche Coding-Assistenten benutzt, die Dateien in deinem Repo lesen können, kannst du ihnen beibringen, Dokumente mit personenbezogenen Daten **immer** zuerst durch Kuckuck zu schicken.
-Je nach Client gibt es vier Schutzebenen, die sich stapeln lassen:
+Der häufigste Einsatz: ein LLM-Client (Claude Code, Cursor, Claude Desktop, opencode, …) soll personenbezogene Daten nie im Klartext zu sehen bekommen.
+Je nach Quelle der Daten gibt es zwei Hauptwege - den **MCP-Proxy** für Daten, die aus *anderen* MCP-Servern kommen, und den **MCP-Server** für Dateien in deinem Workspace - plus einen Hook und eine reine Konventions-Ebene als Fallback.
 
 | Stufe | Mechanismus | Client-Support | Wann sinnvoll |
 |---|---|---|---|
 | 1 | Konvention via `AGENTS.md` / `CLAUDE.md` | alle | Minimal-Setup, wenn nichts weiter geht |
 | 2 | [Claude-Code-Hook](#claude-code-pretooluse-hook) (dieses Repo) | nur Claude Code | Defense-in-Depth: blockt `Read(*.eml)` auch ohne MCP |
-| 3 | [MCP-Server](#mcp-server-empfohlen) (dieses Repo) | Claude Code, Cursor, Cline, Zed, opencode, Claude Desktop | Empfohlen - aktive `kuckuck_pseudonymize`-Tool-Calls |
-| 4 | opencode-Plugin | opencode | Folge-Issue; macht dasselbe wie (2), nur für opencode |
-
-Best-Practice mit Claude Code: **(1) + (2) + (3) kombinieren**.
-MCP-Server als aktive Schnittstelle, Hook als passiver Safety-Net, AGENTS.md als letzte Verteidigung.
-
-### MCP-Server (empfohlen)
-
-Kuckuck kann sich als Model Context Protocol Server registrieren.
-Damit ruft der Assistent `kuckuck_pseudonymize` und `kuckuck_restore` als native MCP-Tools auf, ohne pro-Client-Hook und ohne dass du dich auf AGENTS.md-Konventionen verlassen musst.
-
-```bash
-pip install "kuckuck[mcp]"
-# danach den MCP-Server in deinem Client eintragen
-```
-
-Setup-Anleitungen für Claude Code, opencode und Claude Desktop: siehe [`integrations/mcp/README.md`](integrations/mcp/README.md).
-Beispiel-Configs liegen daneben.
+| 3 | [MCP-Server](#mcp-server-empfohlen) (dieses Repo) | Claude Code, Cursor, Cline, Zed, opencode, Claude Desktop | Dateien aktiv über `kuckuck_pseudonymize` pseudonymisieren |
+| 4 | [MCP-Proxy](#mcp-proxy-pii-aus-fremden-mcp-servern-pseudonymisieren) (dieses Repo) | jeder MCP-Client | PII aus *fremden* MCP-Servern pseudonymisieren, bevor sie das LLM erreichen |
 
 ### MCP-Proxy (PII aus fremden MCP-Servern pseudonymisieren)
 
-Der MCP-Server oben pseudonymisiert *Dateien*.
-Wenn du dagegen einen **anderen** MCP-Server benutzt, der selbst personenbezogene Daten zurückgibt - z. B. ein Jira-MCP oder ein hausinterner Server, der eine Kunden-REST-API kapselt - dann willst du diese Daten pseudonymisieren, **bevor** sie überhaupt beim LLM ankommen.
-Genau das macht der MCP-Proxy: er legt sich als Wrapper vor den fremden Server und schreibt jede Tool-Antwort um.
+Wenn du einen MCP-Server benutzt, der selbst personenbezogene Daten zurückgibt - z. B. ein Jira-MCP oder ein hausinterner Server, der eine Kunden-REST-API kapselt - dann willst du diese Daten pseudonymisieren, **bevor** sie überhaupt beim LLM ankommen.
+Genau das macht der MCP-Proxy: er legt sich als Wrapper vor den fremden Server und schreibt jede Antwort um.
 
 ```mermaid
 sequenceDiagram
@@ -435,6 +251,19 @@ Das Token-Mapping teilt sich der Proxy über den verschlüsselten `--sidecar` mi
 
 Stand heute wrappt der Proxy einen einzelnen Backend-Server mit einer Trust-Einstellung; per-Backend-Trust über eine Multi-Server-Config ist ein Folge-Issue.
 
+### MCP-Server (empfohlen)
+
+Kuckuck kann sich als Model Context Protocol Server registrieren.
+Damit ruft der Assistent `kuckuck_pseudonymize` und `kuckuck_restore` als native MCP-Tools auf, ohne pro-Client-Hook und ohne dass du dich auf AGENTS.md-Konventionen verlassen musst.
+
+```bash
+pip install "kuckuck[mcp]"
+# danach den MCP-Server in deinem Client eintragen
+```
+
+Setup-Anleitungen für Claude Code, opencode und Claude Desktop: siehe [`integrations/mcp/README.md`](integrations/mcp/README.md).
+Beispiel-Configs liegen daneben.
+
 ### Claude-Code-PreToolUse-Hook
 
 Zusätzlich zum MCP-Server kann Claude Code einen PreToolUse-Hook aufrufen, der `Read`, `Edit` und `Grep` auf `*.eml`/`*.msg`-Dateien abfängt und sie vorher durch Kuckuck schickt.
@@ -497,6 +326,119 @@ Wenn du pseudonymisierten Text per API an Claude, GPT oder Gemini schickst, erg�
 > **Übernimm sie wörtlich und unverändert** in deine Antwort.
 > **Flektiere sie nicht** (kein Genitiv-s anhängen, keine Kleinschreibung, keine Umbenennung).
 > Gleiche Token-IDs im gesamten Text beziehen sich auf dieselbe Entität.
+
+## Dateien und Text pseudonymisieren (CLI)
+
+Für Dateien im Terminal: derselbe Master-Key, dasselbe Token-Mapping wie beim MCP-Proxy.
+
+```bash
+kuckuck brief.txt
+# -> brief.txt enthält jetzt [[EMAIL_a7f3b2c1]] statt max@firma.de
+# -> brief.txt.kuckuck-map.enc liegt daneben (verschlüsseltes Mapping)
+
+kuckuck restore brief.txt        # Rückführung nach dem LLM-Roundtrip
+kuckuck docs/*.md                # Batch
+kuckuck brief.txt --output-dir out/   # Original behalten
+kuckuck brief.txt --dry-run      # Vorschau, nichts schreiben
+```
+
+**Mit Denylist für Kunden-/Projektnamen** und **NER-Detektor für Personennamen:**
+
+```bash
+kuckuck brief.txt --denylist denylist.txt   # eine Zeile pro Eintrag, # = Kommentar
+
+# NER einmalig vorbereiten (zieht torch, lädt ~ 1.1 GB ins ~/.cache/kuckuck/models/)
+pip install "kuckuck[ner]"
+kuckuck fetch-model
+kuckuck brief.txt --ner          # "Max Mustermann" -> [[PERSON_a7f3b2c1]]
+```
+
+Der NER-Detektor läuft nur mit `--ner`, damit die Default-Pipeline kein torch laden muss.
+Ohne `kuckuck[ner]`-Extra oder lokales Modell beendet sich `kuckuck --ner` mit Exit-Code 7 und einem Hinweis.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Kuckuck
+    participant Mapping as Mapping-Sidecar<br/>(verschlüsselt)
+    participant LLM as Cloud-LLM<br/>(Claude, GPT, ...)
+
+    User->>Kuckuck: kuckuck brief.eml (mit max@firma.de, Anna)
+    Kuckuck->>Mapping: speichert Originale,<br/>vergibt Token
+    Kuckuck-->>User: brief.eml mit [[EMAIL_...]], [[PERSON_...]]
+    User->>LLM: pseudonymisierten Text
+    LLM-->>User: Antwort mit den gleichen Token
+    User->>Kuckuck: kuckuck restore brief.eml
+    Kuckuck->>Mapping: liest Originale
+    Kuckuck-->>User: Antwort mit echten Namen
+```
+
+### Format-aware Verarbeitung
+
+Kuckuck wählt das Format automatisch über die Datei-Endung (`--format` setzt es explizit) und lässt strukturelle Teile in Ruhe:
+
+| Format | Endung | Was bleibt unangetastet |
+|---|---|---|
+| Plain Text | alles ohne Match | - (ganzer Inhalt geht durch) |
+| E-Mail | `.eml` | Header; nur der Body wird verarbeitet |
+| Outlook | `.msg` | Anhänge (Body: HTML > RTF > Plain, kein byte-faithful Round-Trip) |
+| Markdown | `.md` / `.markdown` | YAML-Frontmatter, Code-Blocks, Inline-Code |
+| XML / HTML | `.xml` / `.html` | Tag-Struktur, Namespaces, CDATA |
+
+```bash
+kuckuck mail.eml --format eml    # --format nur nötig, wenn die Endung nicht passt
+kuckuck brief.txt --sequential-tokens   # [[EMAIL_1]], [[EMAIL_2]] pro Dokument (nicht cross-doc-stabil)
+kuckuck inspect brief.txt.kuckuck-map.enc   # Mapping als Klartext dumpen (Debugging)
+```
+
+**Alle Subkommandos:**
+
+```
+kuckuck <file>...          Pseudonymisieren (Default)
+kuckuck run <file>...      Explizit (identisch zur Default-Form), nimmt --ner
+kuckuck restore <file>...  Mapping anwenden, Original wiederherstellen
+kuckuck mcp serve          MCP-Server starten
+kuckuck mcp proxy          Pseudonymisierenden MCP-Proxy vor einen anderen Server starten
+kuckuck init-key           Neuen Master-Key generieren
+kuckuck fetch-model        GLiNER-Modell laden (nur mit kuckuck[ner])
+kuckuck inspect <map>      Verschlüsseltes Mapping als Klartext dumpen
+kuckuck list-detectors     Alle registrierten Detektoren zeigen
+kuckuck version            Version ausgeben
+```
+
+Die Standalone-Binaries verhalten sich identisch zur pip-installierten CLI (`./kuckuck_macos_arm64 init-key`, `.\kuckuck_windows.exe brief.txt`, …).
+
+## Library-Nutzung
+
+```python
+from pathlib import Path
+from kuckuck import (
+    Mapping,
+    build_default_detectors,
+    load_default_key,
+    load_mapping,
+    pseudonymize_text,
+    restore_text,
+    save_mapping,
+)
+
+key = load_default_key()
+detectors = build_default_detectors(denylist=["Kunde Alpha GmbH"])
+
+source = Path("brief.eml")
+text = source.read_text(encoding="utf-8")
+
+# Bei vorhandenem Mapping merge-reload, sonst leer starten
+map_path = source.with_suffix(source.suffix + ".kuckuck-map.enc")
+mapping = load_mapping(key, map_path) if map_path.is_file() else Mapping()
+
+result = pseudonymize_text(text, key, detectors, mapping=mapping)
+source.write_text(result.text, encoding="utf-8")
+save_mapping(key, result.mapping, map_path)
+
+# Später: restore
+restored = restore_text(source.read_text(encoding="utf-8"), result.mapping)
+```
 
 ## Erkannte Grenzen
 
