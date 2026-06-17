@@ -114,6 +114,18 @@ Beim Anfassen des MCP-Servers (`src/kuckuck_mcp/`):
   FastMCP serialisiert pydantic-Models nativ in das MCP-Tool-Result-JSON-Schema, der Client sieht typisierte Felder mit Descriptions statt opaque Dicts, und der Server validiert seinen Output beim Rausschicken.
   pydantic + FastMCP ist der Standard-Stack für strukturierte Tool-Antworten.
 
+Beim Anfassen des MCP-Proxys (`src/kuckuck_mcp/{transform,middleware,proxy}.py`):
+
+- Die zentrale Invariante: kein Klartext-PII darf den Proxy Richtung Modell verlassen.
+  Das betrifft **alle** Antwort-Kanäle, nicht nur Tool-Results: `on_call_tool` **und** `on_read_resource` werden gehookt, weil Jira-/Confluence-artige Backends ihren Inhalt als Resources liefern.
+  Wer einen neuen Antwort-Kanal entdeckt (neuer Hook, neuer Content-Typ), muss ihn abdecken oder bewusst als Non-Goal dokumentieren - ein still durchgereichter Kanal ist ein PII-Leak.
+- Pseudonymisiert werden: `TextContent`, `structured_content`, das `meta`-Feld, Text in `EmbeddedResource` sowie Resource-`contents` (fastmcp `ResourceContent.content` als `str`, plus rohes `mt.TextResourceContents`).
+  Bewusste Non-Goals: Binär-Blocks (Bild/Audio/`BlobResourceContents`), `list_*`-Descriptions (Metadaten) und **Prompts** (`on_get_prompt` reicht durch - Prompt-Templates tragen erwartungsgemäß kein Kunden-PII).
+- Schlägt die Pseudonymisierung fehl, ist der Default **fail-closed** (`ToolError` bzw. `ResourceError`); nur `--fail-open` oder `KUCKUCK_PROXY_FAIL_OPEN=1` schaltet auf fail-open (dokumentiert UNSAFE), und die Warnung loggt nur die Exception, nie die Payload.
+- Restore (Token -> Klartext) in ausgehenden Argumenten passiert **nur** bei `trusted=True`. Untrusted-Backends bekommen niemals zurückgeführten Klartext.
+- Jeder Zugriff auf das gemeinsame `Mapping` läuft unter dem `anyio.Lock` der Middleware; CPU-Arbeit (inkl. GLiNER) und der Sidecar-Write laufen via `anyio.to_thread.run_sync`, damit der Event-Loop nicht blockiert.
+- Nicht aus dem Gedächtnis raten: `create_proxy` (nicht das deprecatete `FastMCP.as_proxy`) und die Middleware-Hooks vorher in der FastMCP-Doku gegenlesen.
+
 Beim Anfassen der Library-API (`runner.py`, `options.py`):
 
 - `RunOptions` ist `extra='forbid'` - neue Felder explizit ergänzen, nicht via Subclass schmuggeln.

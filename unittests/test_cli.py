@@ -694,3 +694,49 @@ class TestMcpSubcommand:
         import kuckuck_mcp.server as _server  # pylint: disable=import-outside-toplevel
 
         assert callable(_server.main), "kuckuck_mcp.server.main must stay callable for console-script backward compat"
+
+
+class TestMcpProxy:
+    def test_requires_exactly_one_of_backend_or_config(self, key_file: Path) -> None:
+        # Neither given.
+        result = runner.invoke(app, ["mcp", "proxy", "--key-file", str(key_file)])
+        assert result.exit_code == 2
+        assert "exactly one" in result.output.lower()
+        # Both given.
+        both = runner.invoke(
+            app,
+            ["mcp", "proxy", "--key-file", str(key_file), "--backend", "http://x", "--config", "c.json"],
+        )
+        assert both.exit_code == 2
+        assert "exactly one" in both.output.lower()
+
+    def test_help_renders(self) -> None:
+        result = runner.invoke(app, ["mcp", "proxy", "--help"])
+        assert result.exit_code == 0
+        assert "--trusted" in result.output
+
+    def test_builds_proxy_and_runs_it(self, monkeypatch: pytest.MonkeyPatch, key_file: Path) -> None:
+        # Stub build_proxy so we never start a real stdio loop, and assert the
+        # CLI forwards --trusted and the --backend target through to it.
+        captured: dict[str, object] = {}
+
+        class _FakeProxy:
+            def run(self) -> None:
+                captured["ran"] = True
+
+        def fake_build_proxy(target: object, **kwargs: object) -> _FakeProxy:
+            captured["target"] = target
+            captured["kwargs"] = kwargs
+            return _FakeProxy()
+
+        import kuckuck_mcp.proxy as _proxy  # pylint: disable=import-outside-toplevel
+
+        monkeypatch.setattr(_proxy, "build_proxy", fake_build_proxy)
+        result = runner.invoke(
+            app,
+            ["mcp", "proxy", "--key-file", str(key_file), "--backend", "http://example/mcp", "--trusted"],
+        )
+        assert result.exit_code == 0, result.output
+        assert captured["ran"] is True
+        assert captured["target"] == "http://example/mcp"
+        assert captured["kwargs"]["trusted"] is True  # type: ignore[index]

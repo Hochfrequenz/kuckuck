@@ -364,6 +364,77 @@ pip install "kuckuck[mcp]"
 Setup-Anleitungen für Claude Code, opencode und Claude Desktop: siehe [`integrations/mcp/README.md`](integrations/mcp/README.md).
 Beispiel-Configs liegen daneben.
 
+### MCP-Proxy (PII aus fremden MCP-Servern pseudonymisieren)
+
+Der MCP-Server oben pseudonymisiert *Dateien*.
+Wenn du dagegen einen **anderen** MCP-Server benutzt, der selbst personenbezogene Daten zurückgibt - z. B. ein Jira-MCP oder ein hausinterner Server, der eine Kunden-REST-API kapselt - dann willst du diese Daten pseudonymisieren, **bevor** sie überhaupt beim LLM ankommen.
+Genau das macht der MCP-Proxy: er legt sich als Wrapper vor den fremden Server und schreibt jede Tool-Antwort um.
+
+```mermaid
+sequenceDiagram
+    actor LLM as LLM-Client<br/>(Claude, ...)
+    participant Proxy as Kuckuck-Proxy<br/>(Middleware)
+    participant Map as Mapping-Sidecar<br/>(verschlüsselt)
+    participant MCP as Fremder MCP-Server<br/>(Jira, Kunden-API)
+
+    Note over LLM,MCP: Antwort: Backend -> Modell (immer pseudonymisiert)
+    LLM->>Proxy: tools/call get_customer
+    Proxy->>MCP: unveränderte Anfrage weiterleiten
+    MCP-->>Proxy: { email: "max@firma.de" }
+    Proxy->>Map: Original speichern, Token vergeben
+    Proxy-->>LLM: { email: "[[EMAIL_a7f3]]" }
+
+    Note over LLM,MCP: Anfrage: Modell -> Backend (Restore nur mit --trusted)
+    LLM->>Proxy: tools/call notify(to: "[[EMAIL_a7f3]]")
+    Proxy->>Map: Token -> Original (nur trusted backend)
+    Proxy->>MCP: notify(to: "max@firma.de")
+    MCP-->>Proxy: ok
+    Proxy-->>LLM: ok (Antwort wieder pseudonymisiert)
+```
+
+Der Master-Key und der Mapping-Sidecar bleiben lokal - im Modell-Kontext landen nur Token.
+
+```bash
+# einen einzelnen Backend-Server (HTTP/SSE-URL oder lokales Server-Script) wrappen
+kuckuck mcp proxy --backend https://jira.example/mcp --sidecar ./team.kuckuck-map.enc
+
+# stdio- oder Multi-Server-Backends via MCPConfig-JSON (mcpServers-Objekt)
+kuckuck mcp proxy --config ./backend.mcp.json --sidecar ./team.kuckuck-map.enc
+```
+
+Im MCP-Client trägst du dann **den Proxy** statt des Original-Servers ein (`command: "kuckuck", args: ["mcp", "proxy", "--backend", "..."]`).
+
+Zwei Richtungen:
+
+- **Antwort (Backend -> Modell):** PII in Tool-Ergebnissen **und in Resource-Inhalten** wird zu Token (`[[EMAIL_...]]`, `[[PERSON_...]]`, ...), bevor das Modell sie sieht.
+  Das ist die Kern-Garantie - im Modell-Kontext landet kein Klartext.
+  (Resources sind wichtig, weil Jira-/Confluence-MCP-Server ihre Inhalte oft als Resource statt als Tool-Result ausliefern.)
+- **Anfrage (Modell -> Backend):** Nur mit `--trusted` werden Token, die das Modell in Tool-Argumenten mitschickt, vor dem Weiterreichen wieder zu echtem Klartext aufgelöst.
+  Damit kann das Modell auf echten Datensätzen *handeln* (ein Jira-Kommentar schreiben, einen Datensatz aktualisieren), ohne die PII je gesehen zu haben.
+
+Prompts (`on_get_prompt`) werden bewusst **nicht** pseudonymisiert - ein Prompt-Template ist autoren-kontrolliert und trägt erwartungsgemäß kein Kunden-PII.
+Binär-Inhalte (Bild/Audio/Blob) haben keinen erkennbaren Text.
+
+#### Bleibt die Struktur der Tool-Results erhalten?
+
+Ja - der Proxy reicht die **Signatur** des Original-Servers unverändert durch (`create_proxy` exponiert dieselben Tool- und Output-Schemata), und die Pseudonymisierung ersetzt nur String-Werte durch String-Token.
+Die JSON-Struktur, Feldnamen und Nicht-String-Typen (`int`, `bool`, verschachtelte Objekte) bleiben exakt erhalten, sodass die Antwort weiterhin demselben Schema genügt.
+Ein streng typisiertes pydantic-Model als Return-Type funktioniert also weiter; nur der String-Inhalt eines Feldes wird zum Token.
+
+**Eine Einschränkung** gibt es bei String-Feldern mit einem *Wert*-Constraint (z. B. `EmailStr`, also `format: email`, oder ein `pattern`):
+ein Token wie `[[EMAIL_a7f3]]` ist kein gültiger Wert für `format: email`.
+Das Token wird trotzdem ausgeliefert (kein Leak, kein Tool-Crash), aber ein Client, der das `structured_content` strikt gegen das Schema in das typisierte Model zurückparst, bekommt für dieses Feld kein Objekt (`.data` bleibt leer).
+Das ist prinzipbedingt - man kann eine E-Mail nicht gleichzeitig verbergen *und* `format: email` erfüllen.
+
+> **`--trusted` schickt echtes PII an das Backend.**
+> Setze es nur für lokale / vertrauenswürdige Server - niemals für ein Backend, das selbst wieder in eine Cloud schreibt.
+> Ohne `--trusted` bekommt das Backend das Token wörtlich, nicht den Klartext.
+
+Default ist **fail-closed**: scheitert die Pseudonymisierung einer Antwort, wird der Tool-Call blockiert statt Klartext durchzulassen (Notausgang `KUCKUCK_PROXY_FAIL_OPEN=1` bzw. `--fail-open`, dokumentiert UNSICHER).
+Das Token-Mapping teilt sich der Proxy über den verschlüsselten `--sidecar` mit dem datei-basierten CLI - dieselben Token, stabil über Neustarts und kompatibel mit `kuckuck restore`.
+
+Stand heute wrappt der Proxy einen einzelnen Backend-Server mit einer Trust-Einstellung; per-Backend-Trust über eine Multi-Server-Config ist ein Folge-Issue.
+
 ### Claude-Code-PreToolUse-Hook
 
 Zusätzlich zum MCP-Server kann Claude Code einen PreToolUse-Hook aufrufen, der `Read`, `Edit` und `Grep` auf `*.eml`/`*.msg`-Dateien abfängt und sie vorher durch Kuckuck schickt.

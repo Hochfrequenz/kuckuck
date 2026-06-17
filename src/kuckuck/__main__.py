@@ -28,6 +28,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 from cryptography.exceptions import InvalidTag
@@ -536,6 +537,107 @@ def cmd_mcp_serve() -> None:
         )
         raise typer.Exit(EXIT_USAGE) from exc
     mcp_main()
+
+
+@mcp_app.command("proxy")
+def cmd_mcp_proxy(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    backend: str | None = typer.Option(
+        None,
+        "--backend",
+        "-b",
+        help="Downstream MCP server: an HTTP/SSE URL or a local server script path.",
+    ),
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to an MCPConfig JSON file (mcpServers object) for stdio/multi-server backends.",
+    ),
+    key_file: Path | None = typer.Option(None, "--key-file", "-k", help="Override key lookup."),
+    sidecar: Path | None = typer.Option(
+        None,
+        "--sidecar",
+        help=(
+            "Encrypted mapping file to load/persist. Shared with the file-based CLI; "
+            "omit for an in-memory mapping that resets on restart."
+        ),
+    ),
+    trusted: bool = typer.Option(
+        False,
+        "--trusted",
+        help=(
+            "Restore tokens in outgoing tool arguments (real PII leaves to the backend). "
+            "Only for local/trusted servers."
+        ),
+    ),
+    denylist: Path | None = typer.Option(None, "--denylist", help="Path to a denylist file (one entry per line)."),
+    ner: bool = typer.Option(
+        True,
+        "--ner/--no-ner",
+        help=(
+            "Run GLiNER PERSON detection inline (falls back to regex-only when the model is missing). "
+            "--no-ner is regex-only and lower latency."
+        ),
+    ),
+    fail_open: bool = typer.Option(
+        False,
+        "--fail-open",
+        help="UNSAFE: forward a raw result if pseudonymization fails instead of blocking the call.",
+    ),
+) -> None:
+    """Run a pseudonymizing MCP proxy in front of another MCP server.
+
+    Wraps the downstream server and rewrites every payload: PII in responses
+    becomes Kuckuck tokens before reaching the model, and (with --trusted)
+    tokens the model sends as arguments are restored to real values before
+    they reach the backend. The proxy speaks stdio to its own client.
+    """
+    if (backend is None) == (config is None):
+        typer.echo("Provide exactly one of --backend or --config.", err=True)
+        raise typer.Exit(EXIT_USAGE)
+    try:
+        # Deferred import: keep this module loadable without the [mcp] extra.
+        from kuckuck_mcp.proxy import build_proxy  # pylint: disable=import-outside-toplevel
+    except ImportError as exc:
+        typer.echo(
+            "MCP server support is not available in this install.\n"
+            "Install the optional extra via: pip install 'kuckuck[mcp]'",
+            err=True,
+        )
+        raise typer.Exit(EXIT_USAGE) from exc
+
+    try:
+        master = load_key(key_file)
+    except KeyNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(EXIT_KEY_NOT_FOUND) from exc
+
+    # The backend create_proxy connects to: either a parsed MCPConfig object
+    # (--config, an "mcpServers" dict) or a single URL / server-path string
+    # (--backend). Exactly one is set, enforced above.
+    target: str | dict[str, Any]
+    if config is not None:
+        import json  # pylint: disable=import-outside-toplevel
+
+        target = json.loads(config.read_text(encoding="utf-8"))
+    else:
+        assert backend is not None  # guaranteed by the exactly-one check above
+        target = backend
+
+    denylist_terms: list[str] | None = None
+    if denylist is not None:
+        denylist_terms = [line.strip() for line in denylist.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    proxy = build_proxy(
+        target,
+        master=master,
+        sidecar=sidecar,
+        denylist=denylist_terms,
+        use_ner=ner,
+        trusted=trusted,
+        fail_open=fail_open,
+    )
+    proxy.run()
 
 
 @app.command("version")
