@@ -391,6 +391,17 @@ Zwei Richtungen:
 Prompts (`on_get_prompt`) werden bewusst **nicht** pseudonymisiert - ein Prompt-Template ist autoren-kontrolliert und trägt erwartungsgemäß kein Kunden-PII.
 Binär-Inhalte (Bild/Audio/Blob) haben keinen erkennbaren Text.
 
+#### Bleibt die Struktur der Tool-Results erhalten?
+
+Ja - der Proxy reicht die **Signatur** des Original-Servers unverändert durch (`create_proxy` exponiert dieselben Tool- und Output-Schemata), und die Pseudonymisierung ersetzt nur String-Werte durch String-Token.
+Die JSON-Struktur, Feldnamen und Nicht-String-Typen (`int`, `bool`, verschachtelte Objekte) bleiben exakt erhalten, sodass die Antwort weiterhin demselben Schema genügt.
+Ein streng typisiertes pydantic-Model als Return-Type funktioniert also weiter; nur der String-Inhalt eines Feldes wird zum Token.
+
+**Eine Einschränkung** gibt es bei String-Feldern mit einem *Wert*-Constraint (z. B. `EmailStr`, also `format: email`, oder ein `pattern`):
+ein Token wie `[[EMAIL_a7f3]]` ist kein gültiger Wert für `format: email`.
+Das Token wird trotzdem ausgeliefert (kein Leak, kein Tool-Crash), aber ein Client, der das `structured_content` strikt gegen das Schema in das typisierte Model zurückparst, bekommt für dieses Feld kein Objekt (`.data` bleibt leer).
+Das ist prinzipbedingt - man kann eine E-Mail nicht gleichzeitig verbergen *und* `format: email` erfüllen.
+
 > **`--trusted` schickt echtes PII an das Backend.**
 > Setze es nur für lokale / vertrauenswürdige Server - niemals für ein Backend, das selbst wieder in eine Cloud schreibt.
 > Ohne `--trusted` bekommt das Backend das Token wörtlich, nicht den Klartext.

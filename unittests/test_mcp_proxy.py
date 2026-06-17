@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 
 import pytest
-from pydantic import AnyUrl, SecretStr
+from pydantic import AnyUrl, BaseModel, EmailStr, SecretStr
 
 _skip_mcp = False
 try:
@@ -45,6 +45,20 @@ _TEST_KEY = SecretStr("00112233445566778899aabbccddeeff00112233445566778899aabbc
 _REAL_EMAIL = "max@firma.de"
 _REAL_PHONE = "+49 30 1234567"
 _EMAIL_TOKEN_RE = re.compile(r"\[\[EMAIL_[0-9a-f]+\]\]")
+
+
+class Customer(BaseModel):
+    """Typed tool-return model used to check structure/schema preservation."""
+
+    name: str
+    email: str
+    age: int
+
+
+class Contact(BaseModel):
+    """Tool-return model with a format-constrained field (EmailStr)."""
+
+    email: EmailStr
 
 
 def _make_backend() -> tuple["FastMCP", list[str]]:
@@ -202,6 +216,54 @@ def test_fail_open_env_var_enables_escape_hatch(monkeypatch: "pytest.MonkeyPatch
     assert _middleware()._fail_open is True  # pylint: disable=protected-access
     monkeypatch.delenv("KUCKUCK_PROXY_FAIL_OPEN")
     assert _middleware()._fail_open is False  # pylint: disable=protected-access
+
+
+async def test_structured_result_preserves_schema_and_types() -> None:
+    """The proxy exposes the backend's output schema and keeps non-string types.
+
+    Only string leaves become tokens; the JSON structure and an ``int`` field
+    survive, so the result still satisfies the forwarded output schema.
+    """
+    backend: FastMCP = FastMCP("typed-backend")
+
+    @backend.tool
+    def get_customer() -> "Customer":
+        return Customer(name="Anna", email=_REAL_EMAIL, age=42)
+
+    proxy = build_proxy(backend, master=_TEST_KEY, use_ner=False)
+    async with Client(transport=proxy) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+        schema = tools["get_customer"].outputSchema
+        assert schema is not None and schema["properties"]["age"]["type"] == "integer"
+        result = await client.call_tool("get_customer")
+    structured = result.structured_content
+    assert structured is not None
+    assert set(structured) == {"name", "email", "age"}  # structure preserved
+    assert structured["age"] == 42  # non-string type untouched
+    assert structured["email"] != _REAL_EMAIL
+    assert _EMAIL_TOKEN_RE.fullmatch(structured["email"])  # string leaf tokenized
+
+
+async def test_format_constrained_field_is_tokenized_without_leak() -> None:
+    """A format-constrained string (EmailStr) is still tokenized - the documented
+    caveat is that the token violates ``format: email`` so strict client-side
+    typing yields no parsed object, but no cleartext ever leaks.
+    """
+
+    backend: FastMCP = FastMCP("constrained-backend")
+
+    @backend.tool
+    def get_contact_model() -> "Contact":
+        return Contact(email=_REAL_EMAIL)
+
+    proxy = build_proxy(backend, master=_TEST_KEY, use_ner=False)
+    async with Client(transport=proxy) as client:
+        result = await client.call_tool("get_contact_model")
+    # Security guarantee holds regardless of the schema constraint.
+    assert _REAL_EMAIL not in repr(result.structured_content)
+    assert _EMAIL_TOKEN_RE.fullmatch(result.structured_content["email"])
+    # Caveat: the token is not a valid email, so the strict typed view is empty.
+    assert result.data is None
 
 
 def test_transform_round_trip_over_nested_structure() -> None:
