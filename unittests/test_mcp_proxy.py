@@ -20,15 +20,18 @@ from __future__ import annotations
 import re
 
 import pytest
-from pydantic import SecretStr
+from pydantic import AnyUrl, SecretStr
 
 _skip_mcp = False
 try:
+    import mcp.types as mt
     from fastmcp import Client, FastMCP
     from fastmcp.client.transports import FastMCPTransport
+    from fastmcp.tools import ToolResult
 
     from kuckuck.mapping import Mapping
     from kuckuck.pseudonymize import build_default_detectors
+    from kuckuck_mcp.middleware import KuckuckMiddleware
     from kuckuck_mcp.proxy import build_proxy
     from kuckuck_mcp.transform import pseudonymize_value, restore_value
 except ImportError:  # pragma: no cover - covered by the skip marker
@@ -67,6 +70,14 @@ def _make_backend() -> tuple["FastMCP", list[str]]:
     def notify(email: str) -> str:
         received.append(email)
         return "queued"
+
+    @backend.resource("resource://customer/profile")
+    def profile() -> str:
+        return f"Customer email: {_REAL_EMAIL}, phone {_REAL_PHONE}"
+
+    @backend.prompt
+    def greeting() -> str:
+        return f"Write a greeting to {_REAL_EMAIL}"
 
     return backend, received
 
@@ -130,6 +141,67 @@ async def test_untrusted_backend_does_not_restore_token_argument() -> None:
         await client.call_tool("notify", arguments={"email": token})
     assert received == [token]
     assert _REAL_EMAIL not in received
+
+
+async def test_resource_response_is_pseudonymized() -> None:
+    """PII in a resource read is pseudonymized - the Jira/Confluence content path."""
+    backend, _ = _make_backend()
+    client = await _proxy_client(backend, trusted=False)
+    async with client:
+        contents = await client.read_resource("resource://customer/profile")
+    rendered = " ".join(block.text for block in contents if hasattr(block, "text"))
+    assert _REAL_EMAIL not in rendered
+    assert _REAL_PHONE not in rendered
+    assert _EMAIL_TOKEN_RE.search(rendered), f"expected an EMAIL token in {rendered!r}"
+
+
+async def test_prompt_is_passed_through_unchanged() -> None:
+    """Prompts are a documented non-goal: a prompt template is forwarded as-is.
+
+    The test prompt embeds an email only to prove that no transformation runs;
+    real prompt templates are author-controlled and not expected to carry PII.
+    """
+    backend, _ = _make_backend()
+    client = await _proxy_client(backend, trusted=False)
+    async with client:
+        result = await client.get_prompt("greeting")
+    rendered = " ".join(str(message.content) for message in result.messages)
+    assert _REAL_EMAIL in rendered
+
+
+def _middleware(*, trusted: bool = False) -> "KuckuckMiddleware":
+    return KuckuckMiddleware(
+        master=_TEST_KEY,
+        mapping=Mapping(),
+        detectors=build_default_detectors(use_ner=False),
+        trusted=trusted,
+    )
+
+
+def test_tool_result_meta_and_embedded_resource_are_pseudonymized() -> None:
+    """The meta field and EmbeddedResource text are rewritten, not just TextContent."""
+    result = ToolResult(
+        content=[
+            mt.TextContent(type="text", text=f"plain {_REAL_EMAIL}"),
+            mt.EmbeddedResource(
+                type="resource",
+                resource=mt.TextResourceContents(uri=AnyUrl("resource://x"), text=f"embedded {_REAL_EMAIL}"),
+            ),
+        ],
+        meta={"contact": _REAL_EMAIL},
+    )
+    _middleware()._rewrite_tool_result(result)  # pylint: disable=protected-access
+    assert _REAL_EMAIL not in repr(result.content)
+    assert _REAL_EMAIL not in repr(result.meta)
+    assert _EMAIL_TOKEN_RE.search(repr(result.content))
+
+
+def test_fail_open_env_var_enables_escape_hatch(monkeypatch: "pytest.MonkeyPatch") -> None:
+    """KUCKUCK_PROXY_FAIL_OPEN=1 turns on fail-open even without the flag."""
+    monkeypatch.setenv("KUCKUCK_PROXY_FAIL_OPEN", "1")
+    assert _middleware()._fail_open is True  # pylint: disable=protected-access
+    monkeypatch.delenv("KUCKUCK_PROXY_FAIL_OPEN")
+    assert _middleware()._fail_open is False  # pylint: disable=protected-access
 
 
 def test_transform_round_trip_over_nested_structure() -> None:
