@@ -401,6 +401,7 @@ kuckuck mcp serve          MCP-Server starten
 kuckuck mcp proxy          Pseudonymisierenden MCP-Proxy vor einen anderen Server starten
 kuckuck init-key           Neuen Master-Key generieren
 kuckuck fetch-model        GLiNER-Modell laden (nur mit kuckuck[ner])
+kuckuck install-claude-hook  Claude-Code-PreToolUse-Hook installieren
 kuckuck inspect <map>      Verschlüsseltes Mapping als Klartext dumpen
 kuckuck list-detectors     Alle registrierten Detektoren zeigen
 kuckuck version            Version ausgeben
