@@ -30,6 +30,7 @@ try:
     from fastmcp.client.transports import FastMCPTransport
     from fastmcp.tools import ToolResult
 
+    from kuckuck.detectors.ner import is_gliner_installed, is_model_available
     from kuckuck.mapping import Mapping
     from kuckuck.pseudonymize import build_default_detectors
     from kuckuck_mcp.middleware import KuckuckMiddleware
@@ -117,6 +118,30 @@ async def test_text_response_is_pseudonymized() -> None:
     assert _REAL_EMAIL not in rendered
     assert _REAL_PHONE not in rendered
     assert _EMAIL_TOKEN_RE.search(rendered), f"expected an EMAIL token in {rendered!r}"
+
+
+@pytest.mark.ner
+async def test_person_name_pseudonymized_through_proxy_with_gliner() -> None:
+    """End-to-end: GLiNER PERSON detection runs inside the proxy middleware.
+
+    Marked ``ner`` so it only runs in the dedicated NER CI job (the real
+    ~1.1 GB model), not the default suite. Covers the regex-only proxy tests'
+    blind spot: a bare name with no email/phone/handle.
+    """
+    if not is_gliner_installed() or not is_model_available():
+        pytest.skip("gliner / model not present")
+    backend, _ = _make_backend()
+
+    @backend.tool
+    def get_signature() -> str:
+        return "Mit freundlichen Gruessen,\nMax Mustermann\nProjektleiter"
+
+    proxy = build_proxy(backend, master=_TEST_KEY, use_ner=True)
+    async with Client(transport=proxy) as client:
+        result = await client.call_tool("get_signature")
+    rendered = _text_of(result)
+    assert "Max Mustermann" not in rendered
+    assert re.search(r"\[\[PERSON_[0-9a-f]+\]\]", rendered), f"expected a PERSON token in {rendered!r}"
 
 
 async def test_structured_response_is_pseudonymized() -> None:
