@@ -23,7 +23,7 @@ jobs:
             binary: kuckuck_macos_arm64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -91,7 +91,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: "Smoke Test (${{ matrix.artifact }})"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
