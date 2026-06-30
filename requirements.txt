@@ -63,7 +63,7 @@ pydantic==2.13.3
     #   pydantic-settings
 pydantic-core==2.46.3
     # via pydantic
-pydantic-settings==2.14.1
+pydantic-settings==2.14.2
     # via kuckuck (pyproject.toml)
 pyparsing==3.3.2
     # via oletools
