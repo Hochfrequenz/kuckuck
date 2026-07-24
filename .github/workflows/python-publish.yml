@@ -27,32 +27,32 @@ on:
 jobs:
   tests:
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        python-version: ["3.14"]
-        os: [ubuntu-latest]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install tox
+          python-version: "3.14"
+      - name: Run the Unit Tests
+        run: uv run --group tests --extra cli --extra mcp pytest
+      - name: Run Linting
         run: |
-          python -m pip install --upgrade pip
-          pip install tox
-      - name: Run tox
+          uv run --group linting --extra cli --extra mcp pylint kuckuck
+          uv run --group linting --extra cli --extra mcp pylint unittests --rcfile=unittests/.pylintrc
+      - name: Run Type Check
         run: |
-          tox
+          uv run --group type_check --extra cli --extra mcp mypy --show-error-codes src/kuckuck --strict
+          uv run --group type_check --extra cli --extra mcp mypy --show-error-codes unittests --strict
+      - name: Run Coverage
+        working-directory: unittests
+        run: |
+          uv run --group coverage --extra cli --extra mcp coverage run -m pytest
+          uv run --group coverage coverage report --fail-under 80 --omit unittests/*
 
   build-n-publish:
     name: Build and publish Python distributions to PyPI
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        python-version: ["3.14"]
-        os: [ubuntu-latest]
+    runs-on: ubuntu-latest
     # Required by PyPI trusted publishing:
     # https://docs.pypi.org/trusted-publishers/adding-a-publisher/
     environment: release
@@ -62,17 +62,14 @@ jobs:
     needs: tests
     steps:
       - uses: actions/checkout@v7
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install .[packaging]
+          python-version: "3.14"
       - name: Build wheel and source distribution
         run: |
-          python -m build
+          uv build
       - name: Publish distribution to PyPI
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: pypa/gh-action-pypi-publish@release/v1
+        run: |
+          uv publish --trusted-publishing=automatic

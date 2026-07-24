@@ -14,27 +14,81 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            tox_env: build_executable_windows
             artifact: kuckuck_windows
             binary: kuckuck_windows.exe
           - os: macos-latest
-            tox_env: build_executable_macos
             artifact: kuckuck_macos_arm64
             binary: kuckuck_macos_arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: "3.14"
-      - name: Build Executable
+      # Single-binary release (~ 300 MB). Bundles the CLI entry point
+      # (src/kuckuck/__main__.py), the FastMCP server (invoked as
+      # ``kuckuck mcp serve``), and the full NER stack (gliner + CPU-only
+      # torch + transformers) so the downloaded executable supports the CLI,
+      # the install-claude-hook flow, and the MCP-stdio server in one go.
+      #
+      # CPU-only torch is critical: a default install pulls ~3 GB of
+      # CUDA / triton / nvidia libraries that we never use at runtime. The
+      # +cpu wheels from pytorch.org are ~250 MB and produce a ~300 MB binary.
+      # Installed with `uv pip` (not `uv sync`) so this preinstalled CPU
+      # wheel is what satisfies gliner's torch requirement, instead of
+      # whatever uv.lock resolved.
+      #
+      # Model weights themselves are NOT bundled - they live in
+      # ~/.cache/kuckuck/models after 'kuckuck fetch-model'. Bundling them
+      # would push the binary past 1 GB without giving users a way to pick a
+      # different model.
+      - name: Install build dependencies
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install tox
-          tox -e ${{ matrix.tox_env }}
+          uv venv
+          uv pip install -e ".[cli,mcp,build_executable]"
+          uv pip install --index-url https://download.pytorch.org/whl/cpu torch
+          uv pip install 'gliner>=0.2.20' 'huggingface-hub>=0.20' 'onnxruntime>=1.18'
+      - name: Build Executable
+        shell: bash
+        run: |
+          uv run --no-sync pyinstaller --onefile --name ${{ matrix.artifact }} \
+            --collect-data kuckuck \
+            --collect-submodules kuckuck_mcp \
+            --collect-all fastmcp \
+            --collect-all mcp \
+            --collect-all gliner \
+            --collect-all huggingface_hub \
+            --collect-submodules transformers \
+            --collect-data transformers \
+            --collect-all tokenizers \
+            --collect-data torch \
+            --collect-binaries torch \
+            --collect-all sentencepiece \
+            --collect-all safetensors \
+            --copy-metadata torch \
+            --copy-metadata gliner \
+            --copy-metadata transformers \
+            --copy-metadata huggingface_hub \
+            --copy-metadata tokenizers \
+            --exclude-module nvidia \
+            --exclude-module triton \
+            --exclude-module cuda \
+            --exclude-module tensorflow \
+            --exclude-module jax \
+            src/kuckuck/__main__.py
+      # macOS Apple Silicon refuses to execute unsigned Mach-O binaries (amfi
+      # kills them with SIGKILL regardless of Gatekeeper settings). Ad-hoc
+      # signing ("codesign -s -") is free and sufficient for local use and
+      # for binaries distributed via GitHub releases after the user clears
+      # the quarantine xattr:
+      #     xattr -c kuckuck_macos_arm64
+      - name: Codesign (macOS)
+        if: matrix.os == 'macos-latest'
+        run: codesign --force --deep --sign - dist/${{ matrix.binary }}
       - name: Freeze build dependencies
-        run: tox exec -e ${{ matrix.tox_env }} -- pip freeze > dist/build-dependencies-${{ matrix.artifact }}.txt
+        run: uv pip freeze > dist/build-dependencies-${{ matrix.artifact }}.txt
         shell: bash
       - name: Upload Executable as Artifact
         uses: actions/upload-artifact@v7
@@ -57,16 +111,17 @@ jobs:
         with:
           path: ~/.cache/kuckuck/models
           key: gliner-multi-v2.1
-      - name: Set up Python
+      - name: Set up uv
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/setup-python@v7
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: "3.14"
       - name: Download model
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          pip install huggingface-hub
-          python -c "from huggingface_hub import snapshot_download; \
+          uv venv
+          uv pip install huggingface-hub
+          uv run --no-sync python -c "from huggingface_hub import snapshot_download; \
             snapshot_download(repo_id='urchade/gliner_multi-v2.1', \
             local_dir='${HOME}/.cache/kuckuck/models/gliner_multi-v2.1')"
 

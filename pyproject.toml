@@ -53,47 +53,58 @@ ner = [
     "huggingface-hub>=0.20",
     "onnxruntime>=1.18"
 ]
+mcp = [
+    "fastmcp>=3"
+]
+
+[project.urls]
+Changelog = "https://github.com/Hochfrequenz/kuckuck/releases"
+Homepage = "https://github.com/Hochfrequenz/kuckuck"
+
+[dependency-groups]
 tests = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "syrupy==5.5.3",
     "hypothesis==6.155.7"
 ]
-mcp = [
-    "fastmcp>=3"
-]
+# pylint also lints unittests/, so it needs the test deps installed to resolve imports.
 linting = [
     "pylint==4.0.6",
-    "pylint-pydantic==0.4.1"
+    "pylint-pydantic==0.4.1",
+    {include-group = "tests"}
 ]
+# mypy --strict also runs against unittests/.
 type_check = [
-    "mypy==2.1.0"
+    "mypy==2.1.0",
+    {include-group = "tests"}
 ]
 spell_check = [
     "codespell==2.4.3"
 ]
+# coverage runs the pytest suite under measurement.
 coverage = [
-    "coverage==7.14.0"
+    "coverage==7.14.0",
+    {include-group = "tests"}
 ]
 formatting = [
     "black==26.5.1",
     "isort==8.0.1"
 ]
-packaging = [
-    "build==1.5.0",
-    "twine==6.2.0"
-]
 build_executable = [
     "pyinstaller==6.20.0"
 ]
 dev = [
-    "pip-tools"
+    {include-group = "tests"},
+    {include-group = "linting"},
+    {include-group = "type_check"},
+    {include-group = "coverage"},
+    {include-group = "spell_check"},
+    {include-group = "formatting"}
 ]
 
-
-[project.urls]
-Changelog = "https://github.com/Hochfrequenz/kuckuck/releases"
-Homepage = "https://github.com/Hochfrequenz/kuckuck"
+[tool.uv]
+default-groups = []
 
 [project.scripts]
 kuckuck = "kuckuck.__main__:main"
