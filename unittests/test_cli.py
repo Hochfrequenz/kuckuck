@@ -7,10 +7,25 @@ optional ``cli`` extra is not installed.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
 import pytest
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove SGR escape codes so substring checks survive Rich's highlighting.
+
+    Typer force-enables Rich's terminal styling whenever ``GITHUB_ACTIONS`` is
+    set, which is always true in CI. Rich's option highlighter then splits
+    flag names like ``--trusted`` into separate ``--``/``trusted`` styled
+    spans, so a plain ``"--trusted" in result.output`` check that passes
+    locally fails in CI unless the escape codes are stripped first.
+    """
+    return _ANSI_ESCAPE_RE.sub("", text)
 
 _skip_cli = False
 try:
@@ -713,7 +728,7 @@ class TestMcpProxy:
     def test_help_renders(self) -> None:
         result = runner.invoke(app, ["mcp", "proxy", "--help"])
         assert result.exit_code == 0
-        assert "--trusted" in result.output
+        assert "--trusted" in _strip_ansi(result.output)
 
     def test_builds_proxy_and_runs_it(self, monkeypatch: pytest.MonkeyPatch, key_file: Path) -> None:
         # Stub build_proxy so we never start a real stdio loop, and assert the

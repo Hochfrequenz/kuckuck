@@ -48,7 +48,7 @@ jobs:
         run: |
           uv venv
           uv pip install --index-url https://download.pytorch.org/whl/cpu torch
-          uv pip install -e ".[tests,cli,ner,mcp]"
+          uv pip install -e ".[cli,ner,mcp]" --group tests
       - name: Download model (cache miss only)
         if: steps.cache.outputs.cache-hit != 'true'
         run: |

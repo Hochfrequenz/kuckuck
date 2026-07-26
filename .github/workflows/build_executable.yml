@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           uv venv
-          uv pip install -e ".[cli,mcp,build_executable]"
+          uv pip install -e ".[cli,mcp]" --group build_executable
           uv pip install --index-url https://download.pytorch.org/whl/cpu torch
           uv pip install 'gliner>=0.2.20' 'huggingface-hub>=0.20' 'onnxruntime>=1.18'
       - name: Build Executable
