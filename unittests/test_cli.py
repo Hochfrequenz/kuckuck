@@ -27,6 +27,7 @@ def _strip_ansi(text: str) -> str:
     """
     return _ANSI_ESCAPE_RE.sub("", text)
 
+
 _skip_cli = False
 try:
     from typer.testing import CliRunner
