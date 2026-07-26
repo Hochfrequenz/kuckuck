@@ -76,7 +76,7 @@ linting = [
 ]
 # mypy --strict also runs against unittests/.
 type_check = [
-    "mypy==2.1.0",
+    "mypy==2.3.0",
     {include-group = "tests"}
 ]
 spell_check = [
