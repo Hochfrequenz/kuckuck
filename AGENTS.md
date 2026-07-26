@@ -49,15 +49,15 @@ Du darfst bei der Analyse annehmen, dass `[[HANDLE_abc]]` mit gleichem Suffix in
 
 ### Tests, Lint, Types
 
-`tox` orchestriert alles; alle Envs müssen grün sein, bevor du einen PR ready-for-review setzt.
+`uv` orchestriert alles; alle Gruppen müssen grün sein, bevor du einen PR ready-for-review setzt.
 
 ```bash
-tox -e tests          # pytest, syrupy, hypothesis
-tox -e snapshots      # syrupy --snapshot-update
-tox -e linting        # pylint 10/10, pylint-pydantic
-tox -e type_check     # mypy --strict (src + unittests)
-tox -e coverage       # >= 80 %
-tox -e spell_check    # codespell auf src/
+uv run --group tests --extra cli --extra mcp pytest                                             # pytest, syrupy, hypothesis
+uv run --group tests --extra cli pytest -m snapshot --snapshot-update                            # syrupy --snapshot-update
+uv run --group linting --extra cli --extra mcp pylint kuckuck                                    # pylint 10/10, pylint-pydantic
+uv run --group type_check --extra cli --extra mcp mypy --show-error-codes src/kuckuck --strict   # mypy --strict (src + unittests)
+uv run --group coverage --extra cli --extra mcp coverage run -m pytest                           # >= 80 %
+uv run --group spell_check codespell --ignore-words=domain-specific-terms.txt src                # codespell auf src/
 ```
 
 ### Commits & PRs
@@ -65,15 +65,15 @@ tox -e spell_check    # codespell auf src/
 - Conventional Commits zwingend: `feat(...)`, `fix(...)`, `refactor(...)`, `docs(...)`, `chore(...)`, `test(...)`, `ci(...)`, `style(...)`.
 - PR-Titel im selben Format.
 - Kleine Commits bevorzugt (Ziel: 8-15 Commits pro PR).
-- Jeder Commit sollte lokal grün sein (zumindest `tox -e tests`).
+- Jeder Commit sollte lokal grün sein (zumindest `uv run --group tests --extra cli --extra mcp pytest`).
 - Niemals selbst mergen: PR ready-for-review setzen, der Nutzer merged.
 
 ### Dependencies
 
 - Runtime-Deps in `[project.dependencies]` und CLI-Deps in `[cli]`: `>=`-Minimum, keine Obergrenzen.
-- Test/Build/Lint-Deps in `[tests, linting, type_check, coverage, spell_check, formatting, packaging, build_executable]`: **exakt gepinnt**.
-- Nach Änderungen an `pyproject.toml`: `tox -e compile_requirements`.
-- Nur `pip`, kein `uv`.
+- Test/Build/Lint-Deps in `[dependency-groups]` (`tests, linting, type_check, coverage, spell_check, formatting, build_executable, dev`): **exakt gepinnt**.
+- Nach Änderungen an `pyproject.toml`: `uv lock`.
+- Nur `uv`, kein `pip`/`tox`.
 - Python 3.14 ist primary target; Libs auf 3.14-Kompat prüfen, bevor du eine Version pinnst.
 
 ### Pseudonymisierungs-Pipeline

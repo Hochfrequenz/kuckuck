@@ -456,20 +456,19 @@ Für Anthropic/OpenAI B2B mit ausgeschalteter Trainings-Nutzung in der Praxis ir
 ## Development
 
 Das Repo folgt dem Hochfrequenz-Python-Template.
-Tox orchestriert alle Entwickler-Workflows:
+uv orchestriert alle Entwickler-Workflows:
 
 ```bash
-tox -e dev          # komplettes Dev-Environment erzeugen
-tox -e tests        # Unit- und Integrationstests (pytest + syrupy + hypothesis)
-tox -e snapshots    # Snapshots regenerieren (--snapshot-update)
-tox -e linting      # pylint (10/10 nötig)
-tox -e type_check   # mypy --strict
-tox -e coverage     # Coverage-Report (>= 80 %)
-tox -e build_executable        # PyInstaller Windows/Linux
-tox -e build_executable_macos  # PyInstaller macOS + ad-hoc codesign
+uv sync --group dev --extra cli --extra mcp                              # komplettes Dev-Environment erzeugen
+uv run --group tests --extra cli --extra mcp pytest                      # Unit- und Integrationstests (pytest + syrupy + hypothesis)
+uv run --group tests --extra cli pytest -m snapshot --snapshot-update    # Snapshots regenerieren
+uv run --group linting --extra cli --extra mcp pylint kuckuck            # pylint (10/10 nötig)
+uv run --group type_check --extra cli --extra mcp mypy --show-error-codes src/kuckuck --strict  # mypy --strict
+uv run --group coverage --extra cli --extra mcp coverage run -m pytest   # Coverage-Report (>= 80 %)
+uv run --group build_executable --extra cli --extra mcp pyinstaller ...  # PyInstaller Windows/Linux/macOS
 ```
 
-Die Dev-Environment-Einrichtung und PyCharm/VS-Code-Integration sind im [Template-README](https://github.com/Hochfrequenz/python_template_repository) dokumentiert.
+Die Dev-Environment-Einrichtung und PyCharm/VS-Code-Integration sind im [Template-README](https://github.com/Hochfrequenz/python_template_repository) dokumentiert (dort auf `.venv` statt `.tox/dev` verweisen).
 
 ## Lizenz
 
