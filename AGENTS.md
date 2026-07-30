@@ -43,7 +43,7 @@ Du darfst bei der Analyse annehmen, dass `[[HANDLE_abc]]` mit gleichem Suffix in
 - Docstrings, Code-Kommentare und CLI-Output (Hilfetexte, Fehlermeldungen) in **Englisch**.
 - Keine Em-Dashes (—) im Code, in CLI-Output oder in Tests — nur ASCII-Hyphen (`-`).
   In Markdown-Doku sind sie OK.
-- Keine Zero-Width-Chars in Source-Files; falls unvermeidbar nur via `\uXXXX`-Escape (pylint E2515 blockiert Literale).
+- Keine Zero-Width-Chars in Source-Files; falls unvermeidbar nur via `\uXXXX`-Escape (ruff PLE2515 blockiert Literale).
 - codespell läuft nur über `src/`, nicht über Tests oder Doku.
   Die Ignore-Liste klein halten; keine 2-3-Zeichen-Fragmente hinzufügen.
 
@@ -54,7 +54,8 @@ Du darfst bei der Analyse annehmen, dass `[[HANDLE_abc]]` mit gleichem Suffix in
 ```bash
 uv run --group tests --extra cli --extra mcp pytest                                             # pytest, syrupy, hypothesis
 uv run --group tests --extra cli pytest -m snapshot --snapshot-update                            # syrupy --snapshot-update
-uv run --group linting --extra cli --extra mcp pylint kuckuck                                    # pylint 10/10, pylint-pydantic
+uv run --group lint ruff check src/kuckuck unittests                                             # ruff check
+uv run --group lint ruff format --check .                                                        # ruff format
 uv run --group type_check --extra cli --extra mcp mypy --show-error-codes src/kuckuck --strict   # mypy --strict (src + unittests)
 uv run --group coverage --extra cli --extra mcp coverage run -m pytest                           # >= 80 %
 uv run --group spell_check codespell --ignore-words=domain-specific-terms.txt src                # codespell auf src/
