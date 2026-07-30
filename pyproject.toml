@@ -104,6 +104,9 @@ kuckuck-mcp = "kuckuck_mcp.server:main"
 
 [tool.ruff]
 line-length = 120
+# Matches requires-python's floor. Ruff already infers this from requires-python
+# when unset; set explicitly so it's visible without cross-referencing [project].
+target-version = "py311"
 # ruff format also reformats fenced Python code blocks in Markdown; black/isort never touched docs.
 extend-exclude = ["*.md"]
 
