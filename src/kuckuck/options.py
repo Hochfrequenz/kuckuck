@@ -55,7 +55,7 @@ class RunOptions(BaseModel):
     )
     format: str = Field(
         default="auto",
-        description=("Input format selector: 'auto' (decide by file suffix), 'text', 'eml', " "'msg', 'md', or 'xml'."),
+        description=("Input format selector: 'auto' (decide by file suffix), 'text', 'eml', 'msg', 'md', or 'xml'."),
     )
     ner: bool = Field(
         default=False,

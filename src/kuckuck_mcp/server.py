@@ -457,8 +457,7 @@ def build_server() -> FastMCP:
             # message rather than a stack trace.
             raise ToolError(f"Failed to download '{DEFAULT_MODEL_ID}': {exc}") from exc
         return (
-            f"ok: model downloaded to {target}. "
-            "kuckuck_pseudonymize with ner=auto will now include PERSON detection."
+            f"ok: model downloaded to {target}. kuckuck_pseudonymize with ner=auto will now include PERSON detection."
         )
 
     @mcp.prompt(

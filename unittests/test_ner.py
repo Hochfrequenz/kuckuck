@@ -260,9 +260,9 @@ class TestRealModel:
         text = f"Hallo {name}, danke für die Nachricht!"
         spans = detector.detect(text)
         person_texts = [s.text for s in spans if s.entity_type == EntityType.PERSON]
-        assert any(
-            name in t for t in person_texts
-        ), f"GLiNER did not detect '{name}' as a person. spans={person_texts!r}"
+        assert any(name in t for t in person_texts), (
+            f"GLiNER did not detect '{name}' as a person. spans={person_texts!r}"
+        )
 
     @pytest.mark.parametrize(
         "full_name",
@@ -280,11 +280,11 @@ class TestRealModel:
         # We allow either the full name or the surname to be flagged - GLiNER
         # sometimes splits hyphenated or noble names. The point is that some
         # PERSON span overlaps the name fragment.
-        first_token = full_name.split()[0]
+        first_token = full_name.split(maxsplit=1)[0]
         person_texts = [s.text for s in spans if s.entity_type == EntityType.PERSON]
-        assert any(
-            first_token in t for t in person_texts
-        ), f"GLiNER did not detect '{full_name}' as a person. spans={person_texts!r}"
+        assert any(first_token in t for t in person_texts), (
+            f"GLiNER did not detect '{full_name}' as a person. spans={person_texts!r}"
+        )
 
     @pytest.mark.parametrize(
         "text",
@@ -312,7 +312,7 @@ class TestRealModel:
 
         from kuckuck.pseudonymize import build_default_detectors, pseudonymize_text
 
-        detectors = build_default_detectors() + [detector]
+        detectors = [*build_default_detectors(), detector]
         master = SecretStr("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
         result = pseudonymize_text("Hallo Hans, ruf mich unter +49 40 12345 zurück.", master, detectors)
         assert "[[PERSON_" in result.text
@@ -336,7 +336,7 @@ class TestRealModel:
         )
 
         regex_only = pseudonymize_text(text, master, build_default_detectors())
-        with_ner = pseudonymize_text(text, master, build_default_detectors() + [detector])
+        with_ner = pseudonymize_text(text, master, [*build_default_detectors(), detector])
 
         # Regex pipeline cannot see plain first names — none of these become tokens.
         for name in ("Hans", "Peter", "Anna", "Maria"):
@@ -350,6 +350,6 @@ class TestRealModel:
         assert hits >= 3, f"NER detected only {hits}/4 expected names. with_ner={with_ner.text!r}"
 
         # And concretely: NER produced more PERSON tokens than baseline.
-        assert with_ner.text.count("[[PERSON_") > regex_only.text.count(
-            "[[PERSON_"
-        ), f"NER did not add PERSON tokens: regex={regex_only.text!r} ner={with_ner.text!r}"
+        assert with_ner.text.count("[[PERSON_") > regex_only.text.count("[[PERSON_"), (
+            f"NER did not add PERSON tokens: regex={regex_only.text!r} ner={with_ner.text!r}"
+        )

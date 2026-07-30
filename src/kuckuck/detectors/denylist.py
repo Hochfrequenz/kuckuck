@@ -18,7 +18,7 @@ regardless of pattern count.
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 import ahocorasick  # type: ignore[import-not-found]
 

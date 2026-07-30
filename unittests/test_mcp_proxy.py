@@ -63,7 +63,7 @@ class Contact(BaseModel):
     email: EmailStr
 
 
-def _make_backend() -> tuple["FastMCP", list[str]]:
+def _make_backend() -> tuple[FastMCP, list[str]]:
     """Return a dummy backend MCP server plus a list capturing received args.
 
     ``get_contact`` returns PII as a plain string (TextContent path).
@@ -103,7 +103,7 @@ def _text_of(result: object) -> str:
     return " ".join(block.text for block in result.content if hasattr(block, "text"))  # type: ignore[attr-defined]
 
 
-async def _proxy_client(backend: "FastMCP", *, trusted: bool) -> "Client[FastMCPTransport]":
+async def _proxy_client(backend: FastMCP, *, trusted: bool) -> Client[FastMCPTransport]:
     proxy = build_proxy(backend, master=_TEST_KEY, use_ner=False, trusted=trusted)
     return Client(transport=proxy)
 
@@ -209,7 +209,7 @@ async def test_prompt_is_passed_through_unchanged() -> None:
     assert _REAL_EMAIL in rendered
 
 
-def _middleware(*, trusted: bool = False) -> "KuckuckMiddleware":
+def _middleware(*, trusted: bool = False) -> KuckuckMiddleware:
     return KuckuckMiddleware(
         master=_TEST_KEY,
         mapping=Mapping(),
@@ -236,7 +236,7 @@ def test_tool_result_meta_and_embedded_resource_are_pseudonymized() -> None:
     assert _EMAIL_TOKEN_RE.search(repr(result.content))
 
 
-def test_fail_open_env_var_enables_escape_hatch(monkeypatch: "pytest.MonkeyPatch") -> None:
+def test_fail_open_env_var_enables_escape_hatch(monkeypatch: pytest.MonkeyPatch) -> None:
     """KUCKUCK_PROXY_FAIL_OPEN=1 turns on fail-open even without the flag."""
     monkeypatch.setenv("KUCKUCK_PROXY_FAIL_OPEN", "1")
     assert _middleware()._fail_open is True  # pylint: disable=protected-access
@@ -253,7 +253,7 @@ async def test_structured_result_preserves_schema_and_types() -> None:
     backend: FastMCP = FastMCP("typed-backend")
 
     @backend.tool
-    def get_customer() -> "Customer":
+    def get_customer() -> Customer:
         return Customer(name="Anna", email=_REAL_EMAIL, age=42)
 
     proxy = build_proxy(backend, master=_TEST_KEY, use_ner=False)
@@ -279,7 +279,7 @@ async def test_format_constrained_field_is_tokenized_without_leak() -> None:
     backend: FastMCP = FastMCP("constrained-backend")
 
     @backend.tool
-    def get_contact_model() -> "Contact":
+    def get_contact_model() -> Contact:
         return Contact(email=_REAL_EMAIL)
 
     proxy = build_proxy(backend, master=_TEST_KEY, use_ner=False)

@@ -43,8 +43,8 @@ that bound in ~1,100 years. Rotate the master secret long before then.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from pydantic import BaseModel, Field, SecretStr
 

@@ -241,8 +241,7 @@ class TestCommandStringRendering:
         )
         assert "\\" not in rendered, f"expected forward slashes only, got {rendered!r}"
         assert rendered == (
-            "powershell -NoProfile -ExecutionPolicy Bypass -File "
-            '"$CLAUDE_PROJECT_DIR"/.claude/hooks/kuckuck-pseudo.ps1'
+            'powershell -NoProfile -ExecutionPolicy Bypass -File "$CLAUDE_PROJECT_DIR"/.claude/hooks/kuckuck-pseudo.ps1'
         )
 
     def test_windows_global_converts_backslashes_to_forward_slashes(
@@ -258,7 +257,7 @@ class TestCommandStringRendering:
         rendered = install_hook.command_string(win_path, global_scope=True)  # type: ignore[arg-type]
         assert "\\" not in rendered, f"expected forward slashes only, got {rendered!r}"
         assert rendered == (
-            "powershell -NoProfile -ExecutionPolicy Bypass -File " '"C:/Users/u/.claude/hooks/kuckuck-pseudo.ps1"'
+            'powershell -NoProfile -ExecutionPolicy Bypass -File "C:/Users/u/.claude/hooks/kuckuck-pseudo.ps1"'
         )
 
 
