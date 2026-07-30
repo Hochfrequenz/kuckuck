@@ -150,7 +150,7 @@ class TestMergeHookIntoSettings:
 
     def test_rejects_non_object_hooks_field(self) -> None:
         settings: dict[str, Any] = {"hooks": ["not an object"]}
-        with pytest.raises(ValueError, match="settings.hooks is not an object"):
+        with pytest.raises(ValueError, match=r"settings\.hooks is not an object"):
             install_hook.merge_hook_into_settings(settings, command="/tmp/kuckuck-pseudo.sh")
 
     def test_does_not_mutate_settings_when_returning_false(self) -> None:

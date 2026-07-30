@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from kuckuck import RunOptions, run_pseudonymize
 
@@ -85,7 +86,7 @@ def test_run_pseudonymize_explicit_format_overrides_suffix(tmp_path: Path, key_f
 
 def test_run_options_rejects_extra_fields() -> None:
     # Defensive: forbid extras so a typo doesn't silently no-op.
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         RunOptions(definitely_not_a_field=True)  # type: ignore[call-arg]
 
 
