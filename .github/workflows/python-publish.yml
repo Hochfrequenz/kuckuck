@@ -38,8 +38,7 @@ jobs:
         run: uv run --group tests --extra cli --extra mcp pytest
       - name: Run Linting
         run: |
-          uv run --group linting --extra cli --extra mcp pylint kuckuck
-          uv run --group linting --extra cli --extra mcp pylint unittests --rcfile=unittests/.pylintrc
+          uv run --group lint ruff check src/kuckuck unittests
       - name: Run Type Check
         run: |
           uv run --group type_check --extra cli --extra mcp mypy --show-error-codes src/kuckuck --strict

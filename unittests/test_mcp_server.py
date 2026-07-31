@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, TypeAlias, Union
+from typing import Any, TypeAlias
 
 import pytest
 
@@ -38,7 +38,7 @@ try:
     # (SessionT, LifespanContextT, RequestT); Any is fine because the
     # elicitation handlers do not inspect these fields.
     KuckuckClient: TypeAlias = Client[FastMCPTransport]
-    ElicitParams: TypeAlias = Union[ElicitRequestURLParams, ElicitRequestFormParams]
+    ElicitParams: TypeAlias = ElicitRequestURLParams | ElicitRequestFormParams
     ElicitContext: TypeAlias = RequestContext[Any, Any, Any]
     ConsentResponse: TypeAlias = type
 except ImportError:  # pragma: no cover - covered by the skip marker
@@ -84,9 +84,9 @@ async def mcp_client() -> AsyncIterator[KuckuckClient]:
 
 async def _accept_yes_handler(  # pylint: disable=unused-argument
     message: str,
-    response_type: "ConsentResponse",
-    params: "ElicitParams",
-    context: "ElicitContext",
+    response_type: ConsentResponse,
+    params: ElicitParams,
+    context: ElicitContext,
 ) -> object:
     """Elicitation handler that always accepts with the literal 'yes'.
 
@@ -99,9 +99,9 @@ async def _accept_yes_handler(  # pylint: disable=unused-argument
 
 async def _accept_no_handler(  # pylint: disable=unused-argument
     message: str,
-    response_type: "ConsentResponse",
-    params: "ElicitParams",
-    context: "ElicitContext",
+    response_type: ConsentResponse,
+    params: ElicitParams,
+    context: ElicitContext,
 ) -> object:
     """Elicitation handler that 'accepts' but answers 'no' instead of 'yes'."""
     return response_type(value="no")
@@ -109,9 +109,9 @@ async def _accept_no_handler(  # pylint: disable=unused-argument
 
 async def _decline_handler(  # pylint: disable=unused-argument
     message: str,
-    response_type: "ConsentResponse",
-    params: "ElicitParams",
-    context: "ElicitContext",
+    response_type: ConsentResponse,
+    params: ElicitParams,
+    context: ElicitContext,
 ) -> ElicitResult:
     """Elicitation handler that returns the explicit Declined action."""
     return ElicitResult(action="decline")
@@ -119,9 +119,9 @@ async def _decline_handler(  # pylint: disable=unused-argument
 
 async def _cancel_handler(  # pylint: disable=unused-argument
     message: str,
-    response_type: "ConsentResponse",
-    params: "ElicitParams",
-    context: "ElicitContext",
+    response_type: ConsentResponse,
+    params: ElicitParams,
+    context: ElicitContext,
 ) -> ElicitResult:
     """Elicitation handler that returns the explicit Cancelled action."""
     return ElicitResult(action="cancel")

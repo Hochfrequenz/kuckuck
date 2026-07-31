@@ -209,7 +209,7 @@ def cmd_run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         raise typer.Exit(EXIT_USAGE) from exc
     except UnicodeDecodeError as exc:
         typer.echo(
-            f"Cannot decode input as UTF-8 ({exc}). " "If this is an Outlook .msg file, pass --format msg.",
+            f"Cannot decode input as UTF-8 ({exc}). If this is an Outlook .msg file, pass --format msg.",
             err=True,
         )
         raise typer.Exit(EXIT_USAGE) from exc
@@ -372,7 +372,7 @@ def cmd_fetch_model(  # pylint: disable=too-many-arguments,too-many-positional-a
         )
         raise typer.Exit(EXIT_USAGE)
 
-    slug = model_id.split("/")[-1]
+    slug = model_id.rsplit("/", maxsplit=1)[-1]
     if not _MODEL_SLUG_RE.match(slug):
         typer.echo(
             f"Refusing to fetch '{model_id}': slug '{slug}' contains characters that are not safe "

@@ -462,7 +462,8 @@ uv orchestriert alle Entwickler-Workflows:
 uv sync --group dev --extra cli --extra mcp                              # komplettes Dev-Environment erzeugen
 uv run --group tests --extra cli --extra mcp pytest                      # Unit- und Integrationstests (pytest + syrupy + hypothesis)
 uv run --group tests --extra cli pytest -m snapshot --snapshot-update    # Snapshots regenerieren
-uv run --group linting --extra cli --extra mcp pylint kuckuck            # pylint (10/10 nötig)
+uv run --group lint ruff check src/kuckuck unittests                     # ruff check
+uv run --group lint ruff format --check .                                # ruff format
 uv run --group type_check --extra cli --extra mcp mypy --show-error-codes src/kuckuck --strict  # mypy --strict
 uv run --group coverage --extra cli --extra mcp coverage run -m pytest   # Coverage-Report (>= 80 %)
 uv run --group build_executable --extra cli --extra mcp pyinstaller ...  # PyInstaller Windows/Linux/macOS

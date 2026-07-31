@@ -68,11 +68,8 @@ tests = [
     "syrupy==5.5.3",
     "hypothesis==6.163.0"
 ]
-# pylint also lints unittests/, so it needs the test deps installed to resolve imports.
-linting = [
-    "pylint==4.0.6",
-    "pylint-pydantic==0.4.1",
-    {include-group = "tests"}
+lint = [
+    "ruff==0.16.0"
 ]
 # mypy --strict also runs against unittests/.
 type_check = [
@@ -87,20 +84,15 @@ coverage = [
     "coverage==7.15.2",
     {include-group = "tests"}
 ]
-formatting = [
-    "black==26.5.1",
-    "isort==8.0.1"
-]
 build_executable = [
     "pyinstaller==6.21.0"
 ]
 dev = [
     {include-group = "tests"},
-    {include-group = "linting"},
+    {include-group = "lint"},
     {include-group = "type_check"},
     {include-group = "coverage"},
-    {include-group = "spell_check"},
-    {include-group = "formatting"}
+    {include-group = "spell_check"}
 ]
 
 [tool.uv]
@@ -110,25 +102,44 @@ default-groups = []
 kuckuck = "kuckuck.__main__:main"
 kuckuck-mcp = "kuckuck_mcp.server:main"
 
-[tool.black]
+[tool.ruff]
 line-length = 120
-target_version = ["py311", "py312", "py313", "py314"]
+# Matches requires-python's floor. Ruff already infers this from requires-python
+# when unset; set explicitly so it's visible without cross-referencing [project].
+target-version = "py311"
+# ruff format also reformats fenced Python code blocks in Markdown; black/isort never touched docs.
+extend-exclude = ["*.md"]
 
-[tool.isort]
-line_length = 120
-profile = "black"
-
-[tool.pylint.MASTER]
-load-plugins = "pylint_pydantic"
-
-[tool.pylint."MESSAGES CONTROL"]
-max-line-length = 120
-disable = [
-    "too-few-public-methods",   # detectors implement a single-method Protocol
-    "duplicate-code",           # three detectors build Span objects identically by design
-    "c-extension-no-member",    # pyahocorasick is a C extension
-    "no-member",                # pylint-pydantic handles most FieldInfo cases; a few slip through
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "N", "PL", "RUF"]
+ignore = [
+    "PLR0913",  # too-many-arguments
+    "PLR0917",  # too-many-positional-arguments
+    "PLR0912",  # too-many-branches
+    "PLR0914",  # too-many-locals - was pylint-disabled at several call sites before this migration
+    "PLR0915",  # too-many-statements
+    "PLR2004",  # magic-value-comparison
+    # import-outside-toplevel: lazy-loads heavy optional deps (torch, gliner,
+    # onnxruntime, ...) and avoids circular imports; pylint-disabled at ~19
+    # call sites across src/ and unittests/ before this migration.
+    "PLC0415",
+    # German punctuation (guillemets, curly quotes, ellipses) in domain text, not typos.
+    "RUF001",
+    "RUF002",
+    "RUF003",
 ]
+# ruff has no equivalent to pylint's type-inference-based checks (no-member,
+# c-extension-no-member) or its duplicate-code/too-few-public-methods
+# checks - those were disabled repo-wide in the old [tool.pylint."MESSAGES
+# CONTROL"] and simply have no ruff rule to carry the disable forward to.
+
+[tool.ruff.lint.per-file-ignores]
+# typer.Option()/typer.Argument() as parameter defaults is the standard typer
+# idiom; pylint's dangerous-default-value check never covered arbitrary calls.
+"src/kuckuck/__main__.py" = ["B008"]
+# Sequential validate-and-return-early checks; pylint-disabled here before this migration.
+"unittests/smoke_test_exe.py" = ["PLR0911"]
+"unittests/smoke_test_exe_ner.py" = ["PLR0911"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

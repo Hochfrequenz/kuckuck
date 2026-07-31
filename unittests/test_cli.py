@@ -559,7 +559,7 @@ class TestFetchModel:
         # GLiNER.from_pretrained.
         monkeypatch.setattr("kuckuck.__main__.is_gliner_installed", lambda: True)
 
-        def fake_snapshot_download(repo_id: str, local_dir: str) -> str:  # noqa: ARG001
+        def fake_snapshot_download(repo_id: str, local_dir: str) -> str:
             # pylint: disable=unused-argument
             Path(local_dir).mkdir(parents=True, exist_ok=True)
             (Path(local_dir) / "config.json").write_text("{}", encoding="utf-8")

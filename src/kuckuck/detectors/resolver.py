@@ -14,7 +14,7 @@ The output is sorted by ``start`` so callers can walk it in document order.
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from kuckuck.detectors.base import Span
 

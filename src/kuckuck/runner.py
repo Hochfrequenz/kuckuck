@@ -169,7 +169,7 @@ def _check_ner_requirements(
         )
     if not is_model_available():
         raise NerModelMissingError(
-            f"NER requested but no model was found at {default_model_path()}. " "Download it via: kuckuck fetch-model"
+            f"NER requested but no model was found at {default_model_path()}. Download it via: kuckuck fetch-model"
         )
     if options.sequential_tokens:
         msg = (
@@ -265,9 +265,9 @@ def _run_one(  # pylint: disable=too-many-arguments,too-many-positional-argument
 # Re-export for backwards compatibility with callers that imported these
 # helpers from ``kuckuck.runner`` before the public API was nailed down.
 __all__ = [
-    "MappingCorruptError",
     "_FORMAT_BY_SUFFIX",
     "_PREPROCESSORS",
+    "MappingCorruptError",
     "run_pseudonymize",
     "select_preprocessor",
 ]

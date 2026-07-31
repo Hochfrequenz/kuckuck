@@ -16,8 +16,8 @@ from kuckuck.detectors.phone import PhoneDetector
 from kuckuck.detectors.resolver import resolve_spans
 
 __all__ = [
-    "Detector",
     "DenylistDetector",
+    "Detector",
     "EmailDetector",
     "EntityType",
     "HandleDetector",
