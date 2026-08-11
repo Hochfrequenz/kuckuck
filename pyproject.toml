@@ -81,7 +81,7 @@ spell_check = [
 ]
 # coverage runs the pytest suite under measurement.
 coverage = [
-    "coverage==7.15.2",
+    "coverage==7.15.4",
     {include-group = "tests"}
 ]
 build_executable = [
