@@ -66,10 +66,10 @@ tests = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "syrupy==5.5.3",
-    "hypothesis==6.163.0"
+    "hypothesis==6.164.0"
 ]
 lint = [
-    "ruff==0.16.0"
+    "ruff==0.16.2"
 ]
 # mypy --strict also runs against unittests/.
 type_check = [
@@ -81,7 +81,7 @@ spell_check = [
 ]
 # coverage runs the pytest suite under measurement.
 coverage = [
-    "coverage==7.15.2",
+    "coverage==7.15.4",
     {include-group = "tests"}
 ]
 build_executable = [
