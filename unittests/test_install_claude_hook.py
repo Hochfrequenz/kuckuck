@@ -505,7 +505,7 @@ pwsh_required = pytest.mark.skipif(
 
 def _kuckuck_bin() -> str:
     """Return the absolute path to the ``kuckuck`` entry point in the current env."""
-    # When running under tox the console script lives next to the python binary.
+    # Under uv the console script lives next to the python binary (.venv/bin or .venv/Scripts).
     candidate = Path(sys.executable).parent / "kuckuck"
     if candidate.is_file():
         return str(candidate)
