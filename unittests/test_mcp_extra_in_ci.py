@@ -22,6 +22,7 @@ import pytest
 def test_mcp_extra_is_installed_in_ci() -> None:
     assert importlib.util.find_spec("fastmcp") is not None, (
         "The [mcp] extra (fastmcp) is not installed in this CI run, so the MCP "
-        "server/proxy tests would silently skip. Ensure 'tox -e tests' installs "
-        ".[mcp] on every matrix leg."
+        "server/proxy tests would silently skip. Ensure CI runs "
+        "'uv run --group tests --extra cli --extra mcp pytest' so the [mcp] "
+        "extra is installed on every matrix leg."
     )
