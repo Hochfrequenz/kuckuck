@@ -66,14 +66,14 @@ tests = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "syrupy==5.5.3",
-    "hypothesis==6.164.0"
+    "hypothesis==6.165.9"
 ]
 lint = [
     "ruff==0.16.2"
 ]
 # mypy --strict also runs against unittests/.
 type_check = [
-    "mypy==2.3.0",
+    "mypy==2.3.1",
     {include-group = "tests"}
 ]
 spell_check = [
@@ -85,7 +85,7 @@ coverage = [
     {include-group = "tests"}
 ]
 build_executable = [
-    "pyinstaller==6.21.0"
+    "pyinstaller==6.22.0"
 ]
 dev = [
     {include-group = "tests"},
