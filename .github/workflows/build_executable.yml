@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: "3.14"
       # Single-binary release (~ 300 MB). Bundles the CLI entry point
@@ -113,7 +113,7 @@ jobs:
           key: gliner-multi-v2.1
       - name: Set up uv
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: "3.14"
       - name: Download model
