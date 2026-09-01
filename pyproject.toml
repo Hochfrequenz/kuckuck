@@ -65,7 +65,7 @@ Homepage = "https://github.com/Hochfrequenz/kuckuck"
 tests = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
-    "syrupy==5.5.3",
+    "syrupy==6.0.0",
     "hypothesis==6.165.10"
 ]
 lint = [
