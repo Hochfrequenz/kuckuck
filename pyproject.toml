@@ -66,7 +66,7 @@ tests = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "syrupy==6.0.0",
-    "hypothesis==6.165.10"
+    "hypothesis==6.167.1"
 ]
 lint = [
     "ruff==0.16.6"
