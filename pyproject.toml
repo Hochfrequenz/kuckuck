@@ -65,11 +65,11 @@ Homepage = "https://github.com/Hochfrequenz/kuckuck"
 tests = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
-    "syrupy==6.0.0",
-    "hypothesis==6.167.1"
+    "syrupy==6.1.1",
+    "hypothesis==6.168.0"
 ]
 lint = [
-    "ruff==0.16.6"
+    "ruff==0.16.7"
 ]
 # mypy --strict also runs against unittests/.
 type_check = [
@@ -81,11 +81,11 @@ spell_check = [
 ]
 # coverage runs the pytest suite under measurement.
 coverage = [
-    "coverage==7.16.0",
+    "coverage==7.16.1",
     {include-group = "tests"}
 ]
 build_executable = [
-    "pyinstaller==6.22.0"
+    "pyinstaller==6.22.3"
 ]
 dev = [
     {include-group = "tests"},
