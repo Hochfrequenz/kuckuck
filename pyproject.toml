@@ -69,7 +69,7 @@ tests = [
     "hypothesis==6.169.0"
 ]
 lint = [
-    "ruff==0.16.9"
+    "ruff==0.17.0"
 ]
 # mypy --strict also runs against unittests/.
 type_check = [
