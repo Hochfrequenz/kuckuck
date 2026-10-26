@@ -17,6 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Security",
     "Topic :: Text Processing",
 ]
@@ -66,10 +67,10 @@ tests = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "syrupy==6.1.1",
-    "hypothesis==6.168.1"
+    "hypothesis==6.170.1"
 ]
 lint = [
-    "ruff==0.16.9"
+    "ruff==0.17.0"
 ]
 # mypy --strict also runs against unittests/.
 type_check = [
