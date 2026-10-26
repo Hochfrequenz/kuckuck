@@ -75,7 +75,7 @@ uv run --group spell_check codespell --ignore-words=domain-specific-terms.txt sr
 - Test/Build/Lint-Deps in `[dependency-groups]` (`tests, linting, type_check, coverage, spell_check, formatting, build_executable, dev`): **exakt gepinnt**.
 - Nach Änderungen an `pyproject.toml`: `uv lock`.
 - Nur `uv`, kein `pip`/`tox`.
-- Python 3.14 ist primary target; Libs auf 3.14-Kompat prüfen, bevor du eine Version pinnst.
+- Python 3.14 ist primary target (Executable-Build und PyPI-Publish); die Einzelversions-CI-Jobs laufen auf 3.15. Libs auf 3.14/3.15-Kompat prüfen, bevor du eine Version pinnst.
 
 ### Pseudonymisierungs-Pipeline
 
