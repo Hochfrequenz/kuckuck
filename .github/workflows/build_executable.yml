@@ -25,7 +25,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.1.0
         with:
-          python-version: "3.15"
+          python-version: "3.14" # stays on 3.14: onnxruntime has no cp315 wheel yet
       # Single-binary release (~ 300 MB). Bundles the CLI entry point
       # (src/kuckuck/__main__.py), the FastMCP server (invoked as
       # ``kuckuck mcp serve``), and the full NER stack (gliner + CPU-only
@@ -115,7 +115,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         uses: astral-sh/setup-uv@v10.1.0
         with:
-          python-version: "3.15"
+          python-version: "3.14"
       - name: Download model
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -150,7 +150,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.15"
+          python-version: "3.14"
       - name: Download Executable
         uses: actions/download-artifact@v8
         with:
