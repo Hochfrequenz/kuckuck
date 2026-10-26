@@ -33,7 +33,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.1.0
         with:
-          python-version: "3.14"
+          python-version: "3.15"
       - name: Run the Unit Tests
         run: uv run --group tests --extra cli --extra mcp pytest
       - name: Run Linting
@@ -64,7 +64,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.1.0
         with:
-          python-version: "3.14"
+          python-version: "3.15"
       - name: Build wheel and source distribution
         run: |
           uv build
