@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Python 3.15 support**: 3.15 added to the unit-test matrices and the package classifiers; the single-version CI jobs (coverage, formatting, packaging test, lint) now run on 3.15. The executable build and the PyPI publish job stay on 3.14.
+- **Python 3.15 support**: 3.15 added to the unit-test matrices and the package classifiers; the single-version CI jobs (coverage, formatting, packaging test, lint) now run on 3.15. The executable build stays on 3.14 until `onnxruntime` ships cp315 wheels.
 - **Pseudonymizing MCP proxy** (`kuckuck mcp proxy`).
   A FastMCP proxy (`fastmcp.server.create_proxy`) that wraps another MCP server (Jira, a REST-API-backed customer-data server, ...) and rewrites every payload that crosses it via a `KuckuckMiddleware`:
   tool results **and resource contents** are pseudonymized before they reach the model (PII never enters the model context - resources matter because Jira/Confluence backends expose their content that way), covering `TextContent`, `structured_content`, the `meta` field and embedded/resource text.
